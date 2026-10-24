@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Activity, AlertCircle, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown,
+  AlertCircle, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown,
   CircleHelp, Clock3, Code2, FileCode2, GitBranch, Github, LayoutDashboard,
   LifeBuoy, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck,
   Sparkles, TerminalSquare, X,
