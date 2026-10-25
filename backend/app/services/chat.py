@@ -249,9 +249,14 @@ async def run_repository_chat(
         )
         llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for previous in prior_messages:
+            historical_content = previous.content[:2500]
+            if previous.role == "assistant":
+                # Citations belong to each answer's own retrieved context; do not
+                # let historical [S1] references point at a different current source.
+                historical_content = re.sub(r"\[S[0-9]+\]", "", historical_content)
             llm_messages.append({
                 "role": previous.role,
-                "content": previous.content[:2500],
+                "content": historical_content,
             })
         llm_messages.append({"role": "user", "content": user_prompt})
         complete = completion_func or complete_chat

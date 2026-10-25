@@ -161,7 +161,7 @@ async def test_chat_continuation_includes_bounded_history(chat_db) -> None:
 
     async def fake_completion(messages, *, settings):
         # First turn asks a question; second turn contains prior messages.
-        assert any(m["role"] == "assistant" and "delegates token validation" in m["content"] for m in messages)
+        assert any(m["role"] == "assistant" and "The helper checks the access token" in m["content"] for m in messages)
         return "It is handled by authenticate_user in [S1]."
 
     async def first_completion(messages, *, settings):
