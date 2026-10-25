@@ -30,20 +30,6 @@ jobs:
   backend-tests:
     name: Backend tests and live PostgreSQL schema verification
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: repolens_user
-          POSTGRES_PASSWORD: repolens_ci_password
-          POSTGRES_DB: repolens
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U repolens_user -d repolens"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -55,10 +41,30 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r backend/requirements.txt
-      - name: Configure live PostgreSQL connection
+      - name: Install PostgreSQL pgvector without Docker
+        shell: bash
         run: |
-          echo "DATABASE_URL=postgresql+psycopg://repolens_user:repolens_ci_password@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
-          echo "REPOLENS_TEST_DATABASE_URL=postgresql+psycopg://repolens_user:repolens_ci_password@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
+          # A broken Microsoft apt feed on some runner images can make apt-get update
+          # fail even when the PostgreSQL package index itself is available. Disable
+          # only that unrelated feed for this disposable CI runner.
+          while IFS= read -r source; do
+            [ -n "$source" ] || continue
+            sudo mv "$source" "${source}.disabled"
+          done < <(grep -rl --include='*.list' --include='*.sources' 'packages.microsoft.com' /etc/apt/sources.list.d 2>/dev/null || true)
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-18 postgresql-18-pgvector
+      - name: Start local PostgreSQL without Docker
+        shell: bash
+        run: |
+          sudo service postgresql start
+          CI_DB_PASSWORD="$(openssl rand -hex 24)"
+          echo "DATABASE_URL=postgresql+psycopg://repolens_user:${CI_DB_PASSWORD}@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
+          echo "REPOLENS_TEST_DATABASE_URL=postgresql+psycopg://repolens_user:${CI_DB_PASSWORD}@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -v repolens_password="$CI_DB_PASSWORD" <<'SQL'
+          CREATE ROLE repolens_user WITH LOGIN PASSWORD :'repolens_password';
+          SQL
+          sudo -u postgres createdb --owner=repolens_user repolens
+          sudo -u postgres psql -d repolens -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector;'
       - name: Apply schema migration to PostgreSQL
         working-directory: backend
         run: python -m alembic upgrade head
