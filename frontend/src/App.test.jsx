@@ -313,7 +313,7 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
   it("renders the dashboard and API status", async () => {
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /understand the code/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /your code workspace/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect repository/i })).toBeInTheDocument();
     expect(await screen.findByText("Recent repositories")).toBeInTheDocument();
     expect(await screen.findByText("API online")).toBeInTheDocument();
@@ -471,15 +471,17 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(await screen.findByRole("heading", { name: /sign in to repolens/i })).toBeInTheDocument();
   });
 
-  it("keeps suggested code questions in preview mode until the RAG phase", async () => {
+  it("opens AI chat with a suggested question for a connected repository", async () => {
     const user = userEvent.setup();
+    const indexedRepository = { ...repository, indexing_status: "indexed", embedding_status: "embedded" };
+    getSavedRepositories.mockResolvedValueOnce([indexedRepository]);
     render(<App />);
 
     await screen.findByText("Recent repositories");
     await user.click(screen.getByRole("button", { name: /where is authentication handled/i }));
 
-    expect(await screen.findByText(/Question suggestion preview/i)).toBeInTheDocument();
-    expect(screen.getByText(/repository retrieval and AI chat will be connected in Phase 6/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /ask your codebase/i })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Ask about this repository" })).toHaveValue("Where is authentication handled?");
   });
 
 
