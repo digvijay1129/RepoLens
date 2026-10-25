@@ -6,21 +6,23 @@ Verify the Phase 2A PostgreSQL schema more deeply and improve the developer/oper
 
 ## Improvements
 
-- Add a read-only schema-check CLI: `python -m app.db.schema_check`
+- Add a read-only schema-check CLI: python -m app.db.schema_check
 - Verify the deployed Alembic revision, required tables and columns, primary/unique/check/foreign-key constraints, and expected indexes.
 - Ensure malformed/incomplete PostgreSQL URLs fail with a safe configuration message.
 - Add request-session tests confirming cleanup always happens and failed requests roll back the session before it closes.
 - Expand database constraint tests for lowercase identity, supported indexing states, and non-negative retry counts.
 - Add an opt-in read-only integration test against a migrated PostgreSQL database.
-- Run PostgreSQL on the GitHub Actions runner without Docker, apply the migration, execute the integration check, and verify the live schema in CI.
+- Add corrective Alembic revision 20261025_0002 to rename the five doubled check-constraint names created by revision 20261025_0001. This is an append-only migration, so databases that already applied 0001 upgrade safely rather than rewriting migration history.
+- Run PostgreSQL on the GitHub Actions runner without Docker, apply all migrations, execute the integration check, and verify the live schema in CI.
 - Keep frontend tests and the production build in the same workflow.
 
 ## Schema verification command
 
-Run from `backend/` after configuring `.env` and applying migrations:
+Run from backend/ after configuring .env:
 
 ```powershell
 alembic upgrade head
+alembic current
 python -m app.db.schema_check
 ```
 
@@ -42,7 +44,7 @@ $env:REPOLENS_TEST_DATABASE_URL="postgresql+psycopg://repolens_user:YOUR_PASSWOR
 pytest
 ```
 
-Use a test database, not a production database. The integration test only executes `SELECT 1` and reads schema metadata, but still requires a valid connection and migration.
+Use a test database, not a production database. The integration test only executes SELECT 1 and reads schema metadata, but still requires a valid connection and completed migrations.
 
 Frontend verification, from a second terminal:
 
@@ -59,12 +61,13 @@ The backend CI job starts the runner's installed PostgreSQL service (not Docker)
 ## Acceptance checklist
 
 - [ ] Backend unit tests pass.
+- [ ] The corrective migration successfully upgrades a database already at revision 0001.
 - [ ] Local live PostgreSQL migration and schema-check command pass.
-- [ ] The optional integration test passes when `REPOLENS_TEST_DATABASE_URL` is set.
+- [ ] The optional integration test passes when REPOLENS_TEST_DATABASE_URL is set.
 - [ ] Readiness returns HTTP 503 when the database is unavailable without leaking connection details.
 - [ ] Frontend unit tests and production build still pass.
 - [ ] GitHub Actions completes successfully for this branch.
-- [ ] No `.env`, real password, tokens, private data, or credentials are committed.
+- [ ] No .env, real password, tokens, private data, or credentials are committed.
 
 ## Not included
 
