@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   Activity, AlertCircle, ArrowLeft, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown,
   CircleHelp, Clock3, Code2, ExternalLink, FileCode2, Folder, FolderOpen, GitBranch,
-  GitFork, Github, LayoutDashboard, LifeBuoy, LoaderCircle, Menu, MessageSquareText,
-  Plus, Search, Settings2, ShieldCheck, Sparkles, Star, TerminalSquare, X,
+  GitFork, Github, LayoutDashboard, LifeBuoy, LoaderCircle, LockKeyhole, LogIn, LogOut,
+  Mail, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck, Sparkles, Star,
+  TerminalSquare, Trash2, UserRound, X,
 } from "lucide-react";
-import { getApiHealth, getRepositoryContents, inspectRepository } from "./lib/api.js";
+import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getSavedRepositories, loginAccount, registerAccount, saveRepository, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
 import { normalizeGitHubRepositoryUrl } from "./lib/githubRepository.js";
 
 const navigation = [
@@ -35,6 +36,75 @@ function BrandMark() {
 function ApiStatus({ status }) {
   const label = { checking: "Checking API", connected: "API online", offline: "API offline" };
   return <div className={"api-status api-status--" + status} role="status" aria-live="polite"><span className="status-dot" />{label[status]}</div>;
+}
+
+
+function AuthScreen({ onAuthenticated, initialMessage = "" }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(initialMessage);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      const session = mode === "register"
+        ? await registerAccount({ email, password, display_name: displayName.trim() || undefined })
+        : await loginAccount({ email, password });
+      setAccessToken(session.access_token);
+      await onAuthenticated(session);
+    } catch (requestError) {
+      setError(requestError?.message || "Unable to sign in. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <div className="auth-brand">
+        <span className="auth-brand-mark"><Code2 size={22} /></span>
+        <span>RepoLens<small>CODEBASE INTELLIGENCE</small></span>
+      </div>
+      <div className="auth-layout">
+        <section className="auth-intro">
+          <span className="eyebrow"><span className="eyebrow-line" /> YOUR DEVELOPER WORKSPACE</span>
+          <h1>Get closer to<br /><span>your codebase.</span></h1>
+          <p>Connect public GitHub repositories, explore their file trees, and build toward source-grounded AI assistance in a workspace of your own.</p>
+          <div className="auth-benefits">
+            <span><ShieldCheck size={16} /> Your saved repositories stay scoped to your account</span>
+            <span><Github size={16} /> Public GitHub browsing with no GitHub token</span>
+            <span><GitBranch size={16} /> Remember the branch you are exploring</span>
+          </div>
+          <div className="auth-illustration"><div className="auth-illustration-ring" /><div className="auth-illustration-card"><div><span /><span /><span /><i>repository.py</i></div><code><b>def</b> retrieve_context(repo):</code><code>&nbsp;&nbsp;files = repo.<em>search</em>()</code><code>&nbsp;&nbsp;<b>return</b> files</code><small><span /> READY FOR YOUR REPOSITORY</small></div></div>
+        </section>
+        <section className="auth-card panel">
+          <div className="auth-card-top"><span className="auth-card-icon"><LockKeyhole size={19} /></span><span className="auth-secure-pill"><span /> SECURE WORKSPACE</span></div>
+          <span className="section-kicker">{mode === "login" ? "WELCOME BACK" : "CREATE YOUR ACCOUNT"}</span>
+          <h2>{mode === "login" ? "Sign in to RepoLens" : "Create your workspace"}</h2>
+          <p className="auth-card-subtitle">{mode === "login" ? "Continue exploring the repositories you have saved." : "Your own space for repository browsing and code intelligence."}</p>
+          <div className="auth-mode-tabs" role="tablist" aria-label="Account access mode">
+            <button type="button" role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>Sign in</button>
+            <button type="button" role="tab" aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>Create account</button>
+          </div>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            {mode === "register" && <label>Display name<div className="auth-input-wrap"><UserRound size={17} /><input autoComplete="name" maxLength={120} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="How should we address you?" /></div></label>}
+            <label>Email address<div className="auth-input-wrap"><Mail size={17} /><input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" maxLength={320} /></div></label>
+            <label>Password<div className="auth-input-wrap"><LockKeyhole size={17} /><input type="password" required autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "register" ? 12 : 1} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === "register" ? "At least 12 characters" : "Enter your password"} /></div>{mode === "register" && <small className="auth-field-hint">Use at least 12 characters. Passwords are stored as Argon2 hashes, never as plaintext.</small>}</label>
+            {error && <p className="field-error auth-error" role="alert"><AlertCircle size={15} />{error}</p>}
+            <button aria-label={busy ? "Submitting account form" : mode === "login" ? "Submit sign in" : "Submit registration"} className="button button-primary button-full auth-submit" type="submit" disabled={busy}>{busy ? <><LoaderCircle className="spin" size={16} /> Please wait…</> : mode === "login" ? <>Sign in <LogIn size={16} /></> : <>Create account <ArrowRight size={16} /></>}</button>
+          </form>
+          <div className="auth-card-foot"><ShieldCheck size={15} /><span>Private account session · Public repositories only in this phase</span></div>
+        </section>
+      </div>
+      <footer className="auth-footer"><span>© 2026 RepoLens</span><span><i /> Built for developers, with source-first principles</span></footer>
+    </main>
+  );
 }
 
 function ConnectModal({ onClose, onNotice, onConnectRepository }) {
@@ -98,8 +168,8 @@ function ConnectModal({ onClose, onNotice, onConnectRepository }) {
       setIsConnecting(false);
       onClose();
       onNotice(
-        "Connected to " + metadata.full_name +
-        ". Live public metadata and directory browsing are available. This connection is kept only in this browser session.",
+        "Saved " + metadata.full_name +
+        " to your workspace. Its metadata and selected branch are stored in PostgreSQL.",
       );
     } catch (connectionError) {
       setError(connectionError?.message || "Unable to inspect this public repository. Please retry.");
@@ -122,15 +192,15 @@ function ConnectModal({ onClose, onNotice, onConnectRepository }) {
             <input id="repository-url" type="url" placeholder="https://github.com/owner/repository" value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? "repository-error" : "repository-help"} />
           </div>
           {error ? <p className="field-error" id="repository-error" role="alert"><AlertCircle size={14} />{error}</p> : <p className="field-help" id="repository-help">Public repositories first. Private repository authorization will come later.</p>}
-          <div className="modal-note"><ShieldCheck size={17} /><span>RepoLens calls the public GitHub API. No GitHub token is needed, and this phase does not save repositories to the database.</span></div>
-          <button className="button button-primary button-full" type="submit" disabled={isConnecting}>{isConnecting ? <><LoaderCircle className="spin" size={16} /> Inspecting repository…</> : <>Inspect public repository <ArrowRight size={16} /></>}</button>
+          <div className="modal-note"><ShieldCheck size={17} /><span>RepoLens retrieves public metadata, then saves it to your authenticated workspace. No GitHub token is needed.</span></div>
+          <button className="button button-primary button-full" type="submit" disabled={isConnecting}>{isConnecting ? <><LoaderCircle className="spin" size={16} /> Saving repository…</> : <>Save to workspace <ArrowRight size={16} /></>}</button>
         </form>
       </section>
     </div>
   );
 }
 
-function Sidebar({ active, onNavigate, onConnect, mobileOpen, onClose }) {
+function Sidebar({ active, onNavigate, onConnect, mobileOpen, onClose, currentUser }) {
   return (
     <>
       {mobileOpen && <button className="mobile-scrim" type="button" aria-label="Close menu" onClick={onClose} />}
@@ -159,7 +229,7 @@ function Sidebar({ active, onNavigate, onConnect, mobileOpen, onClose }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-plan-card"><div className="plan-icon"><Sparkles size={17} /></div><strong>Your code, understood.</strong><p>Source-grounded insights for your next engineering task.</p><button type="button" className="plan-link" onClick={onConnect}>Add a repository <ArrowRight size={14} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">DR</div><div className="profile-info"><strong>Developer</strong><span>Local workspace</span></div><button className="icon-button profile-menu" type="button" aria-label="Profile menu"><Settings2 size={16} /></button></div>
+          <div className="profile-row"><div className="profile-avatar">{(currentUser?.display_name || currentUser?.email || "D").slice(0, 1).toUpperCase()}</div><div className="profile-info"><strong>{currentUser?.display_name || "Developer"}</strong><span>{currentUser?.email || "Authenticated workspace"}</span></div><span className="profile-auth-dot" aria-label="Signed in" /></div>
         </div>
       </aside>
     </>
@@ -245,7 +315,7 @@ function Overview({ apiStatus, onConnect, onPrompt, onNavigate, repositories, on
 }
 
 
-function RepositoriesPage({ repositories, onConnect, onBrowse }) {
+function RepositoriesPage({ repositories, onConnect, onBrowse, onRemove }) {
   return (
     <section className="repository-page">
       <div className="repository-page-heading">
@@ -271,23 +341,66 @@ function RepositoriesPage({ repositories, onConnect, onBrowse }) {
                 <span><GitFork size={14} /> {repository.forks_count}</span>
                 <span><Code2 size={14} /> {repository.language || "Unknown"}</span>
               </div>
-              <div className="repository-card-foot"><span><GitBranch size={14} /> {repository.default_branch}</span><button className="button button-secondary button-small" type="button" onClick={() => onBrowse(repository.full_name)}>Browse code <ArrowRight size={14} /></button></div>
+              <div className="repository-card-foot"><span><GitBranch size={14} /> {repository.selected_branch || repository.default_branch}</span><div className="repository-card-actions"><button className="button button-secondary button-small" type="button" onClick={() => onBrowse(repository.full_name)}>Browse code <ArrowRight size={14} /></button><button className="icon-button repository-remove-button" type="button" aria-label={"Remove " + repository.full_name} title="Remove repository" onClick={() => onRemove(repository.id)}><Trash2 size={15} /></button></div></div>
             </article>
           ))}
         </div>
       )}
-      <div className="session-storage-note"><ShieldCheck size={16} /><span>Repositories are kept in this browser session only. Database persistence and accounts will be added in a later phase.</span></div>
+      <div className="session-storage-note"><ShieldCheck size={16} /><span>Repository metadata and branch selection are saved to your authenticated workspace. Source files still open on GitHub until indexing is implemented.</span></div>
     </section>
   );
 }
 
-function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepository, onConnect }) {
+function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepository, onConnect, onRepositoryUpdated }) {
   const selectedRepository = repositories.find((repository) => repository.full_name === selectedRepositoryKey) || repositories[0] || null;
   const [path, setPath] = useState("");
   const [contents, setContents] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchSaving, setBranchSaving] = useState(false);
+  const [branchError, setBranchError] = useState("");
+  const selectedBranch = selectedRepository?.selected_branch || selectedRepository?.default_branch || "main";
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedRepository?.id) {
+      setBranches([]);
+      setBranchError("");
+      setBranchesLoading(false);
+      return undefined;
+    }
+    setBranchesLoading(true);
+    setBranches([]);
+    setBranchError("");
+    getRepositoryBranches(selectedRepository.id).then((result) => {
+      if (!cancelled) setBranches(result.items || []);
+    }).catch((requestError) => {
+      if (!cancelled) setBranchError(requestError?.message || "Unable to load repository branches.");
+    }).finally(() => {
+      if (!cancelled) setBranchesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedRepository?.id]);
+
+  async function handleBranchChange(event) {
+    const nextBranch = event.target.value;
+    if (!selectedRepository?.id || !nextBranch || nextBranch === selectedBranch) return;
+    setBranchSaving(true);
+    setBranchError("");
+    try {
+      const updatedRepository = await selectRepositoryBranch(selectedRepository.id, nextBranch);
+      onRepositoryUpdated(updatedRepository);
+      setPath("");
+      setContents(null);
+    } catch (requestError) {
+      setBranchError(requestError?.message || "Unable to save the selected branch.");
+    } finally {
+      setBranchSaving(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -308,7 +421,7 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
     setError("");
     getRepositoryContents(parts[0], parts[1], {
       path,
-      ref: selectedRepository.default_branch,
+      ref: selectedBranch,
     }).then((result) => {
       if (!cancelled) setContents(result);
     }).catch((requestError) => {
@@ -321,7 +434,7 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
     });
 
     return () => { cancelled = true; };
-  }, [selectedRepository?.full_name, selectedRepository?.default_branch, path, refreshKey]);
+  }, [selectedRepository?.full_name, selectedRepository?.selected_branch, selectedRepository?.default_branch, selectedBranch, path, refreshKey]);
 
   if (!selectedRepository) {
     return (
@@ -355,7 +468,7 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
       </div>
 
       <div className="repository-summary panel">
-        <div className="repository-summary-main"><span className="repository-card-icon"><Github size={22} /></span><div><h2>{selectedRepository.full_name}</h2><p>{selectedRepository.description || "No repository description provided."}</p><a href={selectedRepository.html_url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink size={13} /></a></div></div>
+        <div className="repository-summary-main"><span className="repository-card-icon"><Github size={22} /></span><div><h2>{selectedRepository.full_name}</h2><p>{selectedRepository.description || "No repository description provided."}</p><a href={selectedRepository.canonical_url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink size={13} /></a></div></div>
         {repositories.length > 1 && <label className="repo-switcher-label">Repository<select aria-label="Select repository" value={selectedRepository.full_name} onChange={(event) => { onSelectRepository(event.target.value); setPath(""); }}><option value="">Select a repository</option>{repositories.map((repository) => <option key={repository.full_name} value={repository.full_name}>{repository.full_name}</option>)}</select></label>}
         <div className="repository-summary-stats"><span><GitBranch size={14} /> {selectedRepository.default_branch}</span><span><Code2 size={14} /> {selectedRepository.language || "Unknown language"}</span><span><Star size={14} /> {selectedRepository.stargazers_count} stars</span><span><GitFork size={14} /> {selectedRepository.forks_count} forks</span></div>
       </div>
@@ -363,8 +476,9 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
       <div className="file-browser panel">
         <div className="file-browser-heading">
           <div><span className="section-kicker">REPOSITORY FILES</span><h2>{path || "Repository root"}</h2></div>
-          <span className="branch-pill"><GitBranch size={13} /> {selectedRepository.default_branch}</span>
+          <label className="branch-select-label"><span><GitBranch size={13} /> Branch</span><select aria-label="Select branch" value={selectedBranch} onChange={handleBranchChange} disabled={branchesLoading || branchSaving || branches.length === 0}><option value={selectedBranch}>{selectedBranch}</option>{branches.filter((branch) => branch.name !== selectedBranch).map((branch) => <option key={branch.name} value={branch.name}>{branch.name}</option>)}</select>{branchesLoading && <LoaderCircle className="spin branch-loading" size={13} />}</label>
         </div>
+        {branchError && <p className="field-error branch-error" role="alert"><AlertCircle size={14} />{branchError}</p>}
         <div className="file-breadcrumbs" aria-label="Directory breadcrumbs">
           <button type="button" onClick={() => setPath("")} className={!path ? "breadcrumb-current" : ""}>root</button>
           {pathParts.map((segment, index) => <span className="file-breadcrumb-part" key={pathParts.slice(0, index + 1).join("/")}><span>/</span><button type="button" onClick={() => setPath(pathParts.slice(0, index + 1).join("/"))} className={index === pathParts.length - 1 ? "breadcrumb-current" : ""}>{segment}</button></span>)}
@@ -388,7 +502,7 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
                       <span className="file-row-icon file-row-icon--folder"><Icon size={17} /></span><span className="file-row-name">{item.name}<small>Directory</small></span><ArrowRight size={15} className="file-row-action" />
                     </button>
                   ) : (
-                    <a key={item.path} className="file-row" href={item.html_url || selectedRepository.html_url} target="_blank" rel="noreferrer">
+                    <a key={item.path} className="file-row" href={item.html_url || selectedRepository.canonical_url} target="_blank" rel="noreferrer">
                       <span className="file-row-icon"><Icon size={16} /></span><span className="file-row-name">{item.name}<small>{item.type === "file" ? (item.size == null ? "File" : (item.size.toLocaleString() + " bytes")) : item.type}</small></span><ExternalLink size={14} className="file-row-action" />
                     </a>
                   );
@@ -412,6 +526,9 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("overview");
   const [repositories, setRepositories] = useState([]);
   const [selectedRepositoryKey, setSelectedRepositoryKey] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authStatus, setAuthStatus] = useState("checking");
+  const [authMessage, setAuthMessage] = useState("");
   const [apiStatus, setApiStatus] = useState("checking");
   const [connectOpen, setConnectOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -424,19 +541,81 @@ export default function App() {
     }).catch(() => {
       if (mounted) setApiStatus("offline");
     });
+
+    if (!getAccessToken()) {
+      setAuthStatus("signed-out");
+    } else {
+      Promise.all([getCurrentUser(), getSavedRepositories()]).then(([user, savedRepositories]) => {
+        if (!mounted) return;
+        setCurrentUser(user);
+        setRepositories(savedRepositories);
+        setSelectedRepositoryKey(savedRepositories[0]?.full_name || "");
+        setAuthStatus("authenticated");
+      }).catch((requestError) => {
+        if (!mounted) return;
+        clearAccessToken();
+        setRepositories([]);
+        setCurrentUser(null);
+        setAuthMessage(requestError?.message || "Please sign in to continue.");
+        setAuthStatus("signed-out");
+      });
+    }
     return () => { mounted = false; };
   }, []);
 
+  async function handleAuthenticated(session) {
+    setCurrentUser(session.user);
+    setAuthStatus("authenticated");
+    setAuthMessage("");
+    try {
+      const savedRepositories = await getSavedRepositories();
+      setRepositories(savedRepositories);
+      setSelectedRepositoryKey(savedRepositories[0]?.full_name || "");
+    } catch (requestError) {
+      setNotice(requestError?.message || "Signed in, but repositories could not be loaded.");
+    }
+  }
+
   async function connectRepository(repositoryUrl) {
-    const metadata = await inspectRepository(repositoryUrl);
+    const saved = await saveRepository(repositoryUrl);
     setRepositories((current) => {
-      const existingIndex = current.findIndex((repository) => repository.full_name.toLowerCase() === metadata.full_name.toLowerCase());
-      if (existingIndex < 0) return [...current, metadata];
-      return current.map((repository, index) => index === existingIndex ? metadata : repository);
+      const existingIndex = current.findIndex((repository) => repository.id === saved.id || repository.full_name.toLowerCase() === saved.full_name.toLowerCase());
+      if (existingIndex < 0) return [...current, saved];
+      return current.map((repository, index) => index === existingIndex ? saved : repository);
     });
-    setSelectedRepositoryKey(metadata.full_name);
+    setSelectedRepositoryKey(saved.full_name);
     setActiveNav("explorer");
-    return metadata;
+    return saved;
+  }
+
+  async function removeRepository(repositoryId) {
+    try {
+      await deleteSavedRepository(repositoryId);
+      const nextRepositories = repositories.filter((repository) => repository.id !== repositoryId);
+      setRepositories(nextRepositories);
+      if (nextRepositories.length === 0 || !nextRepositories.some((repository) => repository.full_name === selectedRepositoryKey)) {
+        setSelectedRepositoryKey(nextRepositories[0]?.full_name || "");
+      }
+      if (!nextRepositories.some((repository) => repository.full_name === selectedRepositoryKey)) setActiveNav("repositories");
+      setNotice("Repository removed from your workspace.");
+    } catch (requestError) {
+      setNotice(requestError?.message || "Unable to remove this repository.");
+    }
+  }
+
+  function updateRepository(updatedRepository) {
+    setRepositories((current) => current.map((repository) => repository.id === updatedRepository.id ? updatedRepository : repository));
+    setSelectedRepositoryKey(updatedRepository.full_name);
+  }
+
+  function signOut() {
+    clearAccessToken();
+    setCurrentUser(null);
+    setRepositories([]);
+    setSelectedRepositoryKey("");
+    setAuthMessage("");
+    setAuthStatus("signed-out");
+    setNotice("");
   }
 
   function navigate(next, repositoryKey) {
@@ -451,12 +630,19 @@ export default function App() {
   const isOverview = activeNav === "overview";
   const pageTitle = isOverview ? "Overview" : (pageDetails[activeNav] ? pageDetails[activeNav][0] : "Help & support");
 
+  if (authStatus === "checking") {
+    return <main className="auth-loading"><span className="auth-brand-mark"><Code2 size={22} /></span><LoaderCircle className="spin" size={20} /><p>Loading your RepoLens workspace…</p></main>;
+  }
+  if (authStatus !== "authenticated") {
+    return <AuthScreen initialMessage={authMessage} onAuthenticated={handleAuthenticated} />;
+  }
+
   return <div className="app-shell">
-    <Sidebar active={activeNav} onNavigate={navigate} onConnect={() => setConnectOpen(true)} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+    <Sidebar active={activeNav} onNavigate={navigate} onConnect={() => setConnectOpen(true)} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} currentUser={currentUser} />
     <main className="main-shell">
       <header className="topbar">
         <div className="topbar-left"><button className="icon-button mobile-menu-button" type="button" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><strong>{pageTitle}</strong></div></div>
-        <div className="topbar-actions"><div className="environment-pill"><span /> LOCAL PREVIEW</div><button className="icon-button topbar-help" type="button" onClick={() => setNotice("RepoLens is being built phase by phase. See docs/PHASE_1.md for the current scope.")} aria-label="Help"><CircleHelp size={18} /></button><div className="topbar-divider" /><button className="profile-avatar topbar-avatar" type="button" aria-label="Current local workspace">DR</button></div>
+        <div className="topbar-actions"><div className="environment-pill"><span /> AUTHENTICATED WORKSPACE</div><button className="icon-button topbar-help" type="button" onClick={() => setNotice("Setup and verification instructions are available in docs/PHASE_3B.md.")} aria-label="Help"><CircleHelp size={18} /></button><span className="current-user-email">{currentUser?.email}</span><div className="topbar-divider" /><button className="icon-button sign-out-button" type="button" onClick={signOut} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
       </header>
       <div className="page-content">
         {isOverview ? (
@@ -473,6 +659,7 @@ export default function App() {
             repositories={repositories}
             onConnect={() => setConnectOpen(true)}
             onBrowse={(repositoryKey) => navigate("explorer", repositoryKey)}
+            onRemove={removeRepository}
           />
         ) : activeNav === "explorer" ? (
           <RepositoryExplorer
@@ -480,6 +667,7 @@ export default function App() {
             repositories={repositories}
             selectedRepositoryKey={selectedRepositoryKey}
             onSelectRepository={setSelectedRepositoryKey}
+            onRepositoryUpdated={updateRepository}
             onConnect={() => setConnectOpen(true)}
           />
         ) : (

@@ -10,8 +10,8 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description="Public GitHub repository inspection and browsing foundation for RepoLens.",
-    version="0.2.0",
+    description="Authenticated workspaces, persistent public GitHub repositories, and branch-aware browsing for RepoLens.",
+    version="0.3.0",
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",

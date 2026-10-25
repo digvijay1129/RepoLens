@@ -2,12 +2,12 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration; secret values must never be checked into source control."""
+    """Runtime configuration; secret values are excluded from representations."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:5173"
     database_url: str | None = Field(default=None, repr=False)
+    jwt_secret_key: SecretStr | None = Field(default=None, repr=False)
+    jwt_access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
 
     @property
     def cors_origin_list(self) -> list[str]:

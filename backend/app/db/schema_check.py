@@ -21,15 +21,26 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import DatabaseConfigurationError, get_engine
 
 EXPECTED_COLUMNS: dict[str, set[str]] = {
-    "users": {"id", "email", "display_name", "created_at", "updated_at"},
+    "users": {"id", "email", "password_hash", "display_name", "is_active", "created_at", "updated_at"},
     "repositories": {
         "id",
         "user_id",
+        "github_repository_id",
         "github_owner",
         "github_name",
         "full_name",
         "canonical_url",
+        "description",
+        "language",
+        "stargazers_count",
+        "forks_count",
+        "open_issues_count",
+        "size",
+        "license_name",
+        "archived",
+        "github_updated_at",
         "default_branch",
+        "selected_branch",
         "indexed_commit_sha",
         "indexing_status",
         "last_indexed_at",
@@ -64,6 +75,9 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "check": {
             "ck_repositories_indexing_status_allowed",
             "ck_repositories_full_name_lowercase",
+            "ck_repositories_stargazers_nonnegative",
+            "ck_repositories_forks_nonnegative",
+            "ck_repositories_open_issues_nonnegative",
         },
         "foreign": {"fk_repositories_user_id_users"},
         "indexes": {"ix_repositories_user_updated"},
