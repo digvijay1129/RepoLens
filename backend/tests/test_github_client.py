@@ -183,3 +183,35 @@ async def test_github_upstream_server_error_is_sanitized() -> None:
 
     assert error.value.status_code == 502
     assert "internal upstream error" not in error.value.detail
+
+@pytest.mark.asyncio
+async def test_list_branches_returns_safe_branch_names_and_commit_shas() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/repos/org/repo/branches"
+        assert request.url.params["per_page"] == "100"
+        assert request.url.params["page"] == "1"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "name": "main",
+                    "commit": {"sha": "a" * 40},
+                    "protected": True,
+                    "protection": {"secret": "not-returned"},
+                },
+                {
+                    "name": "feature/add-tests",
+                    "commit": {"sha": "b" * 40},
+                    "protected": False,
+                },
+            ],
+            request=request,
+        )
+
+    async with GitHubPublicClient(transport=httpx.MockTransport(handler)) as client:
+        branches = await client.list_branches("org", "repo")
+
+    assert branches == [
+        {"name": "main", "commit_sha": "a" * 40, "protected": True},
+        {"name": "feature/add-tests", "commit_sha": "b" * 40, "protected": False},
+    ]

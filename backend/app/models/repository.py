@@ -4,11 +4,15 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -28,6 +32,9 @@ class Repository(Base):
             name="indexing_status_allowed",
         ),
         CheckConstraint("full_name = lower(full_name)", name="full_name_lowercase"),
+        CheckConstraint("stargazers_count >= 0", name="stargazers_nonnegative"),
+        CheckConstraint("forks_count >= 0", name="forks_nonnegative"),
+        CheckConstraint("open_issues_count >= 0", name="open_issues_nonnegative"),
         Index("ix_repositories_user_updated", "user_id", "updated_at"),
     )
 
@@ -35,11 +42,24 @@ class Repository(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    github_repository_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     github_owner: Mapped[str] = mapped_column(String(39), nullable=False)
     github_name: Mapped[str] = mapped_column(String(100), nullable=False)
     full_name: Mapped[str] = mapped_column(String(140), nullable=False)
     canonical_url: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    stargazers_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    forks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    open_issues_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    license_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    github_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     default_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    selected_branch: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="main", server_default="main"
+    )
     indexed_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     indexing_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending", server_default="pending"

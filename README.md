@@ -1,36 +1,39 @@
 # RepoLens
 
-**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed answers using retrieval-augmented generation (RAG).
+**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring public GitHub repositories now, with retrieval-augmented generation (RAG) and source-grounded LLM chat planned in later phases.
 
-> Current milestone: Phase 3A — real public GitHub repository inspection and directory browsing. Persistent repository management, indexing, embeddings, vector retrieval, and LLM chat are added in later phases.
+## Current implementation
 
-## Stack
+- React + Vite + JavaScript/JSX frontend (no TypeScript)
+- Python + FastAPI backend
+- PostgreSQL 16+, SQLAlchemy 2, and Alembic migrations
+- Argon2 password hashing, short-lived signed JWT access tokens, authenticated workspace APIs
+- Public GitHub REST API integration for repository metadata, branches, and directory listings
+- Persistent owner-scoped repository metadata and selected-branch preference
+- CI tests, live PostgreSQL migration verification, and production frontend build
 
-- Frontend: React, Vite, JavaScript/JSX, CSS — no TypeScript
-- Backend: Python 3.12+, FastAPI, SQLAlchemy 2, Alembic, psycopg 3, HTTPX
-- Database: PostgreSQL 16+
-- Planned vector retrieval: pgvector, introduced with indexing/retrieval phases
-- GitHub integration: unauthenticated public GitHub REST API
-- Constraints: no Docker and no model training
+No Docker and no model training are used.
 
 ## Prerequisites
 
 Install Python 3.12+, Node.js 22.12+ with npm, Git, and PostgreSQL 16+. VS Code is recommended.
 
-## First-time setup
+## Setup in VS Code (Windows PowerShell)
 
 ### 1. Create a local database
 
-Use pgAdmin or psql. Example SQL, run as your local PostgreSQL administrator:
+Use pgAdmin or psql, connected as your local PostgreSQL administrator:
 
 ```sql
 CREATE USER repolens_user WITH PASSWORD 'replace_with_a_strong_local_password';
 CREATE DATABASE repolens OWNER repolens_user;
 ```
 
-### 2. Configure and start the backend
+Skip creation if you already have this database/user. Use a local development database, not production.
 
-Windows PowerShell, from the repository root:
+### 2. Configure the backend
+
+From the repository root:
 
 ```powershell
 cd backend
@@ -41,9 +44,15 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit backend/.env and replace the placeholder DATABASE_URL with your local PostgreSQL URL. Keep the actual .env private; .gitignore excludes it.
+Edit `backend/.env` and set `DATABASE_URL` to your local PostgreSQL connection. Generate a private JWT signing secret:
 
-Apply migrations and check the schema:
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Paste the generated value into `JWT_SECRET_KEY=` in `backend/.env`. It must be at least 32 bytes. Do not reuse the example value, share the secret, or commit `.env`.
+
+Apply the schema through the latest migration and verify it:
 
 ```powershell
 alembic upgrade head
@@ -51,20 +60,21 @@ alembic current
 python -m app.db.schema_check
 ```
 
-Start the API:
+Phase 3B adds Alembic revision `20261025_0003`. If the database is at Phase 2B revision `20261025_0002`, `alembic upgrade head` applies the additions without dropping tables or data.
+
+Start the backend:
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-Backend URLs:
 - API docs: http://127.0.0.1:8000/docs
 - Liveness: http://127.0.0.1:8000/api/v1/health/live
 - Readiness: http://127.0.0.1:8000/api/v1/health/ready
 
 ### 3. Start the frontend
 
-Open a second terminal from the repository root:
+Open another terminal at the repository root:
 
 ```powershell
 cd frontend
@@ -75,11 +85,39 @@ npm run build
 npm run dev
 ```
 
-Open the URL printed by Vite (normally http://localhost:5173).
+Open the local URL printed by Vite (normally http://localhost:5173).
 
-## Run tests
+## Use RepoLens
 
-Backend (with its virtual environment active):
+1. Create an account with an email and a password of at least 12 characters, or sign in.
+2. Select **Connect repository** and enter a public GitHub URL.
+3. RepoLens validates the input, fetches metadata from GitHub's public API, and saves the repository to your authenticated PostgreSQL-backed workspace.
+4. Open **Code explorer**. Use the branch selector to choose an available branch; the selection is saved.
+5. Browse folders. File links open the current selected branch's file page on GitHub.
+
+Repository metadata and branch preference persist across sessions and are scoped to the signed-in user's ID. The directory view currently fetches public directory listings; it does not download, index, or execute file contents.
+
+## API endpoints
+
+### Authentication
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me` (bearer token required)
+
+### Repository workspace
+
+- `POST /api/v1/repositories/saved` — inspect and persist a public repository for the current user
+- `GET /api/v1/repositories/saved` — list current user's saved repositories
+- `DELETE /api/v1/repositories/saved/{repository_id}` — remove only a record owned by the current user
+- `GET /api/v1/repositories/saved/{repository_id}/branches` — list branches after checking ownership
+- `PATCH /api/v1/repositories/saved/{repository_id}/branch` — validate and persist selected branch
+- `POST /api/v1/repositories/inspect` — public metadata preview
+- `GET /api/v1/repositories/{owner}/{repository}/contents` — public directory listing with optional `path` and `ref`
+
+## Tests
+
+Backend (with the backend virtual environment active):
 
 ```powershell
 cd backend
@@ -94,42 +132,28 @@ npm test
 npm run build
 ```
 
-GitHub Actions also applies the Alembic migrations to a disposable PostgreSQL database and verifies the live schema.
+GitHub Actions starts a local PostgreSQL service without Docker, applies the Alembic migrations, runs the backend tests, checks the live database schema, and builds the frontend.
 
-## Phase 3A — public GitHub repository browsing
+## Security boundaries
 
-1. Open RepoLens and choose **Connect repository**.
-2. Paste a public repository URL such as https://github.com/digvijay1129/RepoLens.
-3. RepoLens validates the URL in the browser and the FastAPI backend independently validates it.
-4. The backend fetches curated metadata from the fixed GitHub API host.
-5. The Code explorer lists the live directory entries for the default branch. Select a folder to browse deeper; clicking a file opens its GitHub page.
+- Passwords are hashed with Argon2; plaintext passwords are not stored.
+- Access tokens are signed JWTs with issuer, audience and expiry claims. The browser keeps the token in `sessionStorage` for the current tab/session.
+- Every saved-repository list, update, branch lookup, and delete is scoped by the authenticated user ID. Unknown IDs and records owned by other users return the same 404 response.
+- Repository URLs are restricted to HTTPS on the exact GitHub host. The server connects only to the fixed `api.github.com` origin and uses curated response fields.
+- Only public GitHub repositories are supported. No GitHub token, OAuth, or private-repository access is used.
 
-### Security and limits
-
-- Only HTTPS URLs on the exact github.com host are accepted.
-- The backend uses a fixed api.github.com base URL and never accepts a caller-supplied upstream host.
-- No access token or GitHub login is sent; only public repositories are supported in this phase.
-- Responses are curated to avoid passing through arbitrary GitHub payload fields.
-- Directory paths and refs are length-limited and validated; GitHub errors/rate limits are converted to safe messages.
-- This phase lists file metadata but does not download source contents, persist repository connections, or execute repository code.
-- Repository selections live only in browser memory and disappear when the page is reloaded. PostgreSQL persistence requires identity/authentication first.
-
-See docs/PHASE_3A.md for implementation details and acceptance checks. Previous phases are documented in docs/PHASE_1B.md, docs/PHASE_2A.md, and docs/PHASE_2B.md.
+**Before public internet deployment:** add login/registration rate limiting, email verification, password reset/recovery, security monitoring, HTTPS and managed secrets. This phase provides account and ownership foundations but is not a substitute for a full production security review. Do not commit `.env`, credentials, private code, or user data.
 
 ## Roadmap
 
-- [x] Phase 1A: application foundation and responsive React JavaScript UI
-- [x] Phase 1B: URL validation, modal accessibility, frontend tests
-- [x] Phase 2A: SQLAlchemy models and initial PostgreSQL migration
-- [x] Phase 2B: corrective migration, live schema verification, and session hardening
-- [x] Phase 3A implementation: public metadata inspection, directory browsing, safe errors, and API/UI tests
-- [ ] Phase 3B: branch selection, repository persistence, and authenticated ownership
-- [ ] Phase 4: code parsing, chunking, indexing jobs, and embeddings
+- [x] Phase 1A/1B: foundation, responsive UI, URL validation and tests
+- [x] Phase 2A/2B: PostgreSQL schema, migrations, schema checker and live DB CI
+- [x] Phase 3A: public GitHub metadata and directory browsing
+- [x] Phase 3B implementation: authentication, persistent owned repositories and branch selection (review and verify this phase before continuing)
+- [ ] Phase 4: safe source-file fetching, parsing, chunking, indexing jobs and embeddings
 - [ ] Phase 5: hybrid retrieval using PostgreSQL full-text search and pgvector
-- [ ] Phase 6: grounded LLM chat and citations
-- [ ] Phase 7: complete product workflows
-- [ ] Phase 8: security hardening, evaluation, deployment, and final packaging
+- [ ] Phase 6: grounded LLM chat and source citations
+- [ ] Phase 7: full workflow polish, evaluation and performance
+- [ ] Phase 8: deployment, security review and final ZIP packaging
 
-## Security
-
-Never commit .env, API keys, tokens, database passwords, private source, or user data. Repository URLs are not treated as proof of authentication. Until identity is implemented, repository metadata is session-only and no repository CRUD route is exposed.
+See [Phase 3B notes](docs/PHASE_3B.md) for the current implementation and validation boundaries.

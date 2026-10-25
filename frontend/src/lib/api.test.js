@@ -1,12 +1,41 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getRepositoryContents, inspectRepository } from "./api.js";
+import {
+  clearAccessToken,
+  deleteSavedRepository,
+  getRepositoryBranches,
+  getRepositoryContents,
+  getSavedRepositories,
+  inspectRepository,
+  loginAccount,
+  registerAccount,
+  saveRepository,
+  selectRepositoryBranch,
+  setAccessToken,
+} from "./api.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  clearAccessToken();
 });
 
-describe("RepoLens repository API client", () => {
-  it("posts a canonical public repository URL to the backend", async () => {
+describe("RepoLens API client", () => {
+  it("posts account registration and login payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ access_token: "signed-token", user: { email: "dev@example.com" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await registerAccount({ email: "dev@example.com", password: "a-strong-password-2026" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/v1\/auth\/register$/),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("posts a canonical public repository URL to the inspect endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -26,6 +55,20 @@ describe("RepoLens repository API client", () => {
     );
   });
 
+  it("attaches the session bearer token to protected API calls", async () => {
+    setAccessToken("signed-token");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getSavedRepositories();
+
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer signed-token");
+  });
+
   it("encodes directory and ref query parameters", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -43,6 +86,26 @@ describe("RepoLens repository API client", () => {
     expect(requestedUrl.pathname).toBe("/api/v1/repositories/my-org/my-repo/contents");
     expect(requestedUrl.searchParams.get("path")).toBe("src files");
     expect(requestedUrl.searchParams.get("ref")).toBe("feature/first");
+  });
+
+  it("supports persistent repository actions and branch selection", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: "repo-1" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ selected_branch: "feature/a" }) })
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+
+    await saveRepository("https://github.com/owner/repo");
+    await getRepositoryBranches("repo-1");
+    await selectRepositoryBranch("repo-1", "feature/a");
+    await deleteSavedRepository("repo-1");
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved$/);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/repositories\/saved\/repo-1\/branches$/);
+    expect(fetchMock.mock.calls[2][1].method).toBe("PATCH");
+    expect(fetchMock.mock.calls[3][1].method).toBe("DELETE");
   });
 
   it("uses a safe message when the backend is unavailable", async () => {

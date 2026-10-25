@@ -212,6 +212,40 @@ class GitHubPublicClient:
             "private": False,
         }
 
+    async def list_branches(
+        self,
+        owner: str,
+        repository: str,
+        max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """List up to 500 public branch names and commit SHAs, with bounded pagination."""
+        owner, repository = validate_repository_locator(owner, repository)
+        branches: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            payload = await self._get_json(
+                f"/repos/{quote(owner, safe='')}/{quote(repository, safe='')}/branches",
+                params={"per_page": "100", "page": str(page)},
+            )
+            if not isinstance(payload, list):
+                raise GitHubClientError(502, "GitHub returned an unexpected branch listing.")
+            for item in payload:
+                if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                    continue
+                commit = item.get("commit")
+                commit_sha = commit.get("sha") if isinstance(commit, dict) else None
+                if not isinstance(commit_sha, str):
+                    commit_sha = ""
+                branches.append({
+                    "name": item["name"],
+                    "commit_sha": commit_sha,
+                    "protected": bool(item.get("protected", False)),
+                })
+            if len(payload) < 100:
+                return branches
+        # Reaching the page cap is surfaced in the route response, not silently
+        # represented as the complete list.
+        return branches
+
     async def list_directory(
         self,
         owner: str,

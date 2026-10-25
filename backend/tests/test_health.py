@@ -13,7 +13,7 @@ def test_root_returns_service_information() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["service"] == "RepoLens API"
-    assert payload["version"] == "0.2.0"
+    assert payload["version"] == "0.3.0"
 
 
 def test_liveness_endpoint_does_not_require_database(monkeypatch) -> None:

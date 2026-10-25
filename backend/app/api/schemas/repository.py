@@ -1,5 +1,6 @@
 """Request and response schemas for public GitHub repository browsing."""
 
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -9,7 +10,6 @@ class RepositoryInspectRequest(BaseModel):
     """Payload used to inspect a public GitHub repository URL."""
 
     model_config = ConfigDict(extra="forbid")
-
     repository_url: str = Field(min_length=1, max_length=2048)
 
 
@@ -56,3 +56,47 @@ class RepositoryContentsResponse(BaseModel):
     items: list[RepositoryContentItem]
     may_be_truncated: bool = False
     notice: str | None = None
+
+
+class SavedRepositoryResponse(BaseModel):
+    """Persisted repository workspace record scoped to its owner."""
+
+    id: uuid.UUID
+    github_repository_id: int | None
+    github_owner: str
+    github_name: str
+    full_name: str
+    canonical_url: str
+    description: str | None
+    language: str | None
+    stargazers_count: int
+    forks_count: int
+    open_issues_count: int
+    size: int
+    license_name: str | None
+    archived: bool
+    default_branch: str | None
+    selected_branch: str
+    indexing_status: str
+    github_updated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BranchOption(BaseModel):
+    name: str
+    commit_sha: str
+    protected: bool = False
+
+
+class BranchListResponse(BaseModel):
+    repository_id: uuid.UUID
+    selected_branch: str
+    default_branch: str | None
+    items: list[BranchOption]
+    may_be_truncated: bool = False
+
+
+class SelectBranchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selected_branch: str = Field(min_length=1, max_length=255)

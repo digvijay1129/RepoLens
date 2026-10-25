@@ -1,13 +1,14 @@
-"""Workspace user record.
+"""Workspace user record and credential hash.
 
-Authentication is intentionally deferred. The user row provides a stable
-owner key for repository-level data isolation.
+Plaintext passwords are never stored. Authentication endpoints use password_hash;
+legacy rows created before Phase 3B may have no password hash and cannot log in
+until credentials are registered through a supported account workflow.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -21,7 +22,9 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
