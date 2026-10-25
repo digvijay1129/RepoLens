@@ -1,6 +1,6 @@
 # RepoLens
 
-**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring public GitHub repositories now, with retrieval-augmented generation (RAG) and source-grounded LLM chat planned in later phases.
+**GitHub Codebase Intelligence Assistant** — a developer workspace for public GitHub repositories with source indexing, pgvector and keyword retrieval, hybrid search, and citation-grounded RAG chat.
 
 ## Current implementation
 
@@ -13,6 +13,9 @@
 - Configurable OpenAI-compatible embedding provider, versioned vector storage metadata, retryable owner-scoped embedding jobs
 - pgvector cosine-similarity retrieval, PostgreSQL full-text search, hybrid reciprocal-rank fusion, and file/line citations
 - Persistent owner-scoped repository metadata and selected-branch preference
+- OpenRouter chat and optional embeddings using a backend-only key
+- Offline Recall@k, MRR, nDCG@k, and citation-quality evaluation
+- Production configuration validation, trusted-host checks, security headers, and no-store API responses
 - CI tests, live PostgreSQL migration verification, and production frontend build
 
 No Docker and no model training are used.
@@ -100,9 +103,17 @@ Open the local URL printed by Vite (normally http://localhost:5173).
 6. Click **Index source files** to queue an indexing job. The workspace shows progress, skipped files, chunk count, and the commit snapshot when indexing finishes.
 7. To generate embeddings, set `EMBEDDINGS_ENABLED=true` and configure the backend-only provider values in `backend/.env`, then select **Generate embeddings** in Code Explorer. Embeddings are opt-in and are not required for source indexing.
 8. Use **Search this codebase** to search your current indexed commit with keyword, semantic, or hybrid retrieval. Results include GitHub links to exact source line ranges.
-9. Configure the optional LLM provider in `backend/.env` and use **Ask RepoLens** for grounded answers with file/line citations.
+9. Configure the optional OpenRouter LLM provider in `backend/.env` and use **Ask RepoLens** for grounded answers with file/line citations.
 
 Repository metadata, branch preference, source chunks, embeddings, and saved conversations persist across sessions and are scoped to the signed-in user's ID. Indexing reads only bounded, allowlisted UTF-8 text files from public repositories, records file paths and line ranges, and never executes source code.
+
+## OpenRouter configuration
+
+Copy `backend/.env.example` to `backend/.env` and set `OPENROUTER_API_KEY` to your private OpenRouter key. The provided defaults are `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`, `OPENROUTER_CHAT_MODEL=openai/gpt-5.6-luna`, and `OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small`. Set `LLM_ENABLED=true` to enable chat. Set `EMBEDDINGS_ENABLED=true` only when you want to generate embeddings and use semantic/hybrid retrieval. Never expose the key in frontend configuration or commit `.env`.
+
+## Security and production notes
+
+Read [Phase 8 deployment and security notes](docs/PHASE_8.md) and [SECURITY.md](SECURITY.md) before hosting the service publicly. Production mode requires a strong JWT key, TLS for remote PostgreSQL, explicit HTTPS CORS origins, real trusted host names, and an HTTPS OpenRouter referer when configured. Interactive API documentation is disabled in production. This project still requires distributed rate limiting, account recovery/email verification, monitoring, and a separate security review before broad public launch.
 
 ## OpenRouter configuration
 
@@ -198,6 +209,6 @@ GitHub Actions starts a local PostgreSQL service without Docker, applies the Ale
 - [x] Phase 5 implementation: pgvector semantic retrieval, PostgreSQL full-text search, hybrid ranking and citations (verify before continuing)
 - [x] Phase 6 implementation: grounded RAG chat, persistent conversations, and validated source citations (verify before continuing)
 - [x] Phase 7 implementation: OpenRouter chat/embedding integration, bounded retries, copy-answer UX, and offline retrieval/citation evaluation (verify before continuing)
-- [ ] Phase 8: deployment, security review and final ZIP packaging
+- [x] Phase 8 implementation: production configuration checks, trusted hosts, security headers, deployment runbook, and release package (review and verify before deploying)
 
-See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), [Phase 5 notes](docs/PHASE_5.md), [Phase 6 notes](docs/PHASE_6.md), and [Phase 7 notes](docs/PHASE_7.md) for implementation details and validation boundaries.
+See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), [Phase 5 notes](docs/PHASE_5.md), [Phase 6 notes](docs/PHASE_6.md), [Phase 7 notes](docs/PHASE_7.md), and [Phase 8 notes](docs/PHASE_8.md) for implementation details and validation boundaries.

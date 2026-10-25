@@ -18,6 +18,7 @@ on:
       - "phase-5/**"
       - "phase-6/**"
       - "phase-7/**"
+      - "phase-8/**"
   pull_request:
     branches:
       - main
@@ -88,3 +89,26 @@ jobs:
       - name: Build frontend for production
         working-directory: frontend
         run: npm run build
+
+  release-package:
+    name: Build and validate source release ZIP
+    runs-on: ubuntu-latest
+    needs:
+      - backend-tests
+      - frontend-quality
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Package source-only release and validate archive
+        run: python scripts/package_release.py --output "$RUNNER_TEMP/RepoLens-Phase8-Release.zip"
+      - name: Upload validated release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RepoLens-Phase8-Release
+          path: ${{ runner.temp }}/RepoLens-Phase8-Release.zip
+          if-no-files-found: error
+          retention-days: 30
