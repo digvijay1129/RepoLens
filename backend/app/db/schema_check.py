@@ -254,6 +254,25 @@ def validate_schema(
                     + f" (found: {present_names})"
                 )
 
+    dialect = getattr(getattr(schema_inspector, "bind", None), "dialect", None)
+    if getattr(dialect, "name", None) == "postgresql" and "repository_chunk_embeddings" in table_names:
+        embedding_columns = {
+            column["name"]: column for column in schema_inspector.get_columns("repository_chunk_embeddings")
+        }
+        vector_column = embedding_columns.get("vector")
+        if vector_column is not None and "vector" not in str(vector_column["type"]).lower():
+            issues.append(
+                "Table 'repository_chunk_embeddings' must use the native PostgreSQL vector type."
+            )
+        chunk_indexes = {
+            item.get("name") for item in schema_inspector.get_indexes("repository_chunks")
+        }
+        if "ix_repository_chunks_fts_simple" not in chunk_indexes:
+            issues.append(
+                "Table 'repository_chunks' is missing PostgreSQL full-text index "
+                "ix_repository_chunks_fts_simple."
+            )
+
     if applied_revision != expected_revision:
         issues.append(
             "Alembic revision mismatch: "

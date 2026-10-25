@@ -6,7 +6,7 @@ import {
   Mail, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck, Sparkles, Star,
   TerminalSquare, Trash2, UserRound, X,
 } from "lucide-react";
-import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getRepositoryIndexingJob, getSavedRepositories, loginAccount, registerAccount, saveRepository, startRepositoryIndex, startRepositoryEmbeddings, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
+import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getRepositoryIndexingJob, getSavedRepositories, loginAccount, registerAccount, saveRepository, startRepositoryIndex, startRepositoryEmbeddings, searchSavedRepository, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
 import { normalizeGitHubRepositoryUrl } from "./lib/githubRepository.js";
 
 const navigation = [
@@ -365,6 +365,11 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
   const [indexJob, setIndexJob] = useState(null);
   const [indexStarting, setIndexStarting] = useState(false);
   const [indexError, setIndexError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState("hybrid");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchPayload, setSearchPayload] = useState(null);
   const selectedBranch = selectedRepository?.selected_branch || selectedRepository?.default_branch || "main";
   const indexIsActive = indexJob && ["queued", "running"].includes(indexJob.status);
 
@@ -439,6 +444,27 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
       setIndexStarting(false);
     }
   }
+  async function handleSearchSubmit(event) {
+    event.preventDefault();
+    if (!selectedRepository?.id || !searchQuery.trim() || searchLoading) return;
+    setSearchLoading(true);
+    setSearchError("");
+    try {
+      const result = await searchSavedRepository(selectedRepository.id, {
+        query: searchQuery.trim(),
+        mode: searchMode,
+        limit: 8,
+      });
+      setSearchPayload(result);
+    } catch (requestError) {
+      setSearchPayload(null);
+      setSearchError(requestError?.message || "Unable to search this repository.");
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+
 
   useEffect(() => {
     if (!indexJob || !["queued", "running"].includes(indexJob.status) || !selectedRepository?.id) {
@@ -586,6 +612,35 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
         </div>}
         {selectedRepository.embedding_status === "embedded" && selectedRepository.embedding_model && <p className="embedding-active-meta"><Check size={14} /> Active embedding configuration: <strong>{selectedRepository.embedding_provider}</strong> / <strong>{selectedRepository.embedding_model}</strong> · {selectedRepository.embedding_dimensions} dimensions</p>}
       </div>
+
+      <section className="source-search-panel panel" aria-labelledby="source-search-title">
+        <div className="source-search-heading">
+          <div className="source-search-heading-icon"><Search size={17} /></div>
+          <div><h2 id="source-search-title">Search this codebase</h2><p>Find relevant source chunks with line-level citations from the current indexed commit.</p></div>
+          <span className="search-engine-pill">PGVECTOR + FULL TEXT</span>
+        </div>
+        <form className="source-search-form" onSubmit={handleSearchSubmit}>
+          <label className="source-search-query"><span>What are you looking for?</span><input aria-label="Search repository source" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={500} minLength={2} placeholder="e.g. How is JWT authentication validated?" disabled={selectedRepository.indexing_status !== "indexed"} /></label>
+          <label className="source-search-mode"><span>Retrieval mode</span><select aria-label="Retrieval mode" value={searchMode} onChange={(event) => setSearchMode(event.target.value)}><option value="hybrid">Hybrid (recommended)</option><option value="semantic">Semantic</option><option value="keyword">Keyword</option></select></label>
+          <button className="button button-primary source-search-submit" type="submit" disabled={searchLoading || searchQuery.trim().length < 2 || selectedRepository.indexing_status !== "indexed" || (searchMode !== "keyword" && selectedRepository.embedding_status !== "embedded")}>
+            {searchLoading ? <><LoaderCircle className="spin" size={15} /> Searching…</> : <><Search size={15} /> Search sources</>}
+          </button>
+        </form>
+        {selectedRepository.indexing_status !== "indexed" && <p className="source-search-hint">Index this repository's source files before searching.</p>}
+        {selectedRepository.indexing_status === "indexed" && searchMode !== "keyword" && selectedRepository.embedding_status !== "embedded" && <p className="source-search-hint">Generate embeddings to enable semantic and hybrid retrieval. Keyword search works independently.</p>}
+        {searchError && <p className="field-error indexing-error" role="alert"><AlertCircle size={14} />{searchError}</p>}
+        {searchPayload && <div className="source-search-results" aria-live="polite">
+          <div className="source-search-results-heading"><div><strong>{searchPayload.result_count} source matches</strong><span>{searchPayload.repository} · commit {searchPayload.commit_sha.slice(0, 7)}</span></div><button className="button button-quiet button-small" type="button" onClick={() => setSearchPayload(null)}>Clear results</button></div>
+          {searchPayload.results.length === 0 ? <div className="source-search-empty"><Search size={18} /><span>No matching source chunks found. Try a different phrase or switch retrieval mode.</span></div> : <div className="source-search-result-list">
+            {searchPayload.results.map((item, resultIndex) => <article className="source-search-result" key={item.chunk_id}>
+              <div className="source-search-result-top"><span className="source-search-result-rank">{String(resultIndex + 1).padStart(2, "0")}</span><div className="source-search-result-path"><FileCode2 size={14} /><strong>{item.file_path}</strong><span>Lines {item.start_line}–{item.end_line}</span></div><span className="source-search-result-score">{Math.round(item.score * 100)}%</span></div>
+              {item.symbol_names.length > 0 && <div className="source-search-symbols">{item.symbol_names.slice(0, 5).map((symbol) => <code key={symbol}>{symbol}</code>)}</div>}
+              <pre className="source-search-snippet"><code>{item.snippet}</code></pre>
+              <div className="source-search-result-foot"><div className="source-search-match-tags">{item.match_types.map((type) => <span key={type}>{type}</span>)}</div><a href={item.citation_url} target="_blank" rel="noopener noreferrer">Open cited lines <ArrowUpRight size={13} /></a></div>
+            </article>)}
+          </div>}
+        </div>}
+      </section>
 
       <div className="file-browser panel">
         <div className="file-browser-heading">

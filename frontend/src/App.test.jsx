@@ -18,6 +18,7 @@ import {
   selectRepositoryBranch,
   startRepositoryIndex,
   startRepositoryEmbeddings,
+  searchSavedRepository,
   setAccessToken,
   deleteSavedRepository,
 } from "./lib/api.js";
@@ -38,6 +39,7 @@ vi.mock("./lib/api.js", () => ({
   selectRepositoryBranch: vi.fn(),
   startRepositoryIndex: vi.fn(),
   startRepositoryEmbeddings: vi.fn(),
+  searchSavedRepository: vi.fn(),
   deleteSavedRepository: vi.fn(),
 }));
 
@@ -175,6 +177,27 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     deleteSavedRepository.mockResolvedValue(null);
     loginAccount.mockResolvedValue({ access_token: "login-token", user: userProfile });
     registerAccount.mockResolvedValue({ access_token: "register-token", user: userProfile });
+    searchSavedRepository.mockResolvedValue({
+      repository_id: repository.id,
+      repository: "digvijay1129/repolens",
+      query: "authenticate_user",
+      mode: "keyword",
+      commit_sha: "a".repeat(40),
+      result_count: 1,
+      results: [{
+        chunk_id: "chunk-1",
+        file_path: "backend/app/auth.py",
+        language: "python",
+        start_line: 12,
+        end_line: 28,
+        symbol_names: ["authenticate_user"],
+        snippet: "def authenticate_user(token): return user",
+        score: 1,
+        match_types: ["keyword"],
+        commit_sha: "a".repeat(40),
+        citation_url: "https://github.com/digvijay1129/RepoLens/blob/" + "a".repeat(40) + "/backend/app/auth.py#L12-L28",
+      }],
+    });
     startRepositoryEmbeddings.mockResolvedValue({
       id: "embedding-job-1",
       repository_id: repository.id,
@@ -402,6 +425,29 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(screen.getByText(/repository retrieval and AI chat will be connected in Phase 6/i)).toBeInTheDocument();
   });
 
+
+
+  it("searches an indexed repository and renders a line-level source citation", async () => {
+    const user = userEvent.setup();
+    const indexedRepository = { ...repository, indexing_status: "indexed", embedding_status: "pending" };
+    getSavedRepositories.mockResolvedValueOnce([indexedRepository]);
+    render(<App />);
+    await screen.findByText("Recent repositories");
+    await user.click(screen.getByRole("button", { name: /^code explorer/i }));
+    await screen.findByRole("heading", { name: "Code explorer" });
+    expect(screen.getByRole("heading", { name: "Search this codebase" })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Search repository source" }), "authenticate_user");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Retrieval mode" }), "keyword");
+    await user.click(screen.getByRole("button", { name: /search sources/i }));
+
+    expect(searchSavedRepository).toHaveBeenCalledWith(indexedRepository.id, {
+      query: "authenticate_user", mode: "keyword", limit: 8,
+    });
+    expect(await screen.findByText("backend/app/auth.py")).toBeInTheDocument();
+    expect(screen.getByText("Lines 12–28")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open cited lines/i })).toHaveAttribute("href", expect.stringContaining("#L12-L28"));
+  });
 
   it("generates embeddings for an indexed repository and shows the active model", async () => {
     const user = userEvent.setup();

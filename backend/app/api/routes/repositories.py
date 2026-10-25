@@ -21,12 +21,18 @@ from app.api.schemas.repository import (
     SavedRepositoryResponse,
     SelectBranchRequest,
 )
+from app.api.schemas.search import RepositorySearchRequest, RepositorySearchResponse
 from app.db.session import get_db_session
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
 from app.models.user import User
 from app.services.indexing import run_embedding_job, run_indexing_job
-from app.services.embeddings import EmbeddingConfigurationError, get_embedding_configuration
+from app.services.embeddings import (
+    EmbeddingConfigurationError,
+    EmbeddingProviderError,
+    get_embedding_configuration,
+)
+from app.services.retrieval import SearchReadinessError, search_repository_chunks
 from app.services.github_client import (
     GitHubClientError,
     GitHubPublicClient,
@@ -468,6 +474,40 @@ def get_repository_indexing_job(
     if job is None:
         raise HTTPException(status_code=404, detail="Indexing job was not found.")
     return IndexingJobResponse.model_validate(_indexing_job_payload(job))
+
+
+
+@router.post(
+    "/saved/{repository_id}/search",
+    response_model=RepositorySearchResponse,
+    summary="Search the current repository source snapshot",
+)
+async def search_saved_repository(
+    repository_id: uuid.UUID,
+    payload: RepositorySearchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> RepositorySearchResponse:
+    """Run owner-scoped keyword, semantic, or hybrid retrieval with source citations."""
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    try:
+        result = await search_repository_chunks(
+            db,
+            repository,
+            current_user.id,
+            payload.query,
+            mode=payload.mode,
+            limit=payload.limit,
+        )
+        return RepositorySearchResponse.model_validate(result)
+    except SearchReadinessError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EmbeddingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except EmbeddingProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(

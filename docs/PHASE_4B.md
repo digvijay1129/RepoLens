@@ -46,7 +46,7 @@ Both endpoints require an authenticated owner. The server verifies repository ow
 
 ## Storage decision
 
-Vectors are stored as JSON arrays in this phase so local setup does not need a PostgreSQL extension. This is durable and suitable for testing metadata flow, but it is not an efficient similarity-search index. Phase 5 will introduce pgvector and indexed distance search, preserving provider/model/dimension metadata and applying a migration strategy for stored vectors.
+Vectors are stored as JSON arrays in this phase so local setup does not need a PostgreSQL extension. This is durable and suitable for testing metadata flow, but it is not an efficient similarity-search index. Phase 5 converts the stored vectors to pgvector and adds semantic/keyword/hybrid retrieval. See [PHASE_5.md](PHASE_5.md).
 
 ## Migration and tests
 

@@ -17,6 +17,7 @@ from app.main import app
 from app.api.routes import repositories as repository_routes
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
+from app.models.repository_chunk import RepositoryChunk
 from app.models.repository_chunk_embedding import RepositoryChunkEmbedding
 from app.models.user import User
 from app.services import auth as auth_service
@@ -394,5 +395,76 @@ def test_embedding_job_is_queued_idempotently_and_scoped_to_repository_owner(
     forbidden = api_client.post(
         f"/api/v1/repositories/saved/{repository_id}/embeddings",
         headers=second_headers,
+    )
+    assert forbidden.status_code == 404
+
+
+
+def test_source_search_endpoint_returns_line_citations_and_is_owner_scoped(
+    api_client: TestClient,
+    monkeypatch,
+) -> None:
+    owner = create_account(api_client, "search-owner@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner['access_token']}"}
+    saved = api_client.post(
+        "/api/v1/repositories/saved",
+        headers=owner_headers,
+        json={"repository_url": "https://github.com/Digvijay1129/RepoLens"},
+    )
+    assert saved.status_code == 201, saved.text
+    repository_id = UUID(saved.json()["id"])
+    commit_sha = "a" * 40
+
+    with Session(api_client.app.state.test_engine) as db:
+        repository = db.get(Repository, repository_id)
+        repository.indexing_status = "indexed"
+        repository.indexed_commit_sha = commit_sha
+        db.commit()
+
+    async def fake_search(db, repository, user_id, query, *, mode="hybrid", limit=8):
+        assert repository.id == repository_id
+        assert repository.user_id == user_id
+        assert query == "authenticate_user"
+        assert mode == "keyword"
+        return {
+            "repository_id": repository.id,
+            "repository": repository.full_name,
+            "query": query,
+            "mode": mode,
+            "commit_sha": commit_sha,
+            "result_count": 1,
+            "results": [{
+                "chunk_id": UUID("00000000-0000-0000-0000-000000000123"),
+                "file_path": "backend/app/auth.py",
+                "language": "python",
+                "start_line": 12,
+                "end_line": 28,
+                "symbol_names": ["authenticate_user"],
+                "snippet": "def authenticate_user(token): return user",
+                "score": 1.0,
+                "match_types": ["keyword"],
+                "commit_sha": commit_sha,
+                "citation_url": f"https://github.com/Digvijay1129/RepoLens/blob/{commit_sha}/backend/app/auth.py#L12-L28",
+            }],
+        }
+
+    monkeypatch.setattr(repository_routes, "search_repository_chunks", fake_search)
+    response = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/search",
+        headers=owner_headers,
+        json={"query": "authenticate_user", "mode": "keyword", "limit": 5},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["result_count"] == 1
+    assert body["results"][0]["start_line"] == 12
+    assert body["results"][0]["citation_url"].endswith("#L12-L28")
+
+    another_account = create_account(api_client, "search-other@example.com")
+    other_headers = {"Authorization": f"Bearer {another_account['access_token']}"}
+    forbidden = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/search",
+        headers=other_headers,
+        json={"query": "authenticate_user", "mode": "keyword", "limit": 5},
     )
     assert forbidden.status_code == 404
