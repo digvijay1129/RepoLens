@@ -209,7 +209,7 @@ npm test
 npm run build
 ```
 
-GitHub Actions runs backend tests and a live PostgreSQL schema check using a PostgreSQL service image with pgvector. It also runs frontend tests and a production build. Once both suites pass, CI builds and validates a source-only release ZIP. The workflow does not modify the runner's host package repositories.
+GitHub Actions installs PostgreSQL and pgvector directly on a disposable GitHub-hosted runner (without Docker), applies the Alembic migrations, runs backend tests and the live schema checks, and then runs frontend tests and a production build. When both suites pass, CI builds and validates a source-only release ZIP. The PostgreSQL setup temporarily disables an unrelated Microsoft apt feed that otherwise returns HTTP 403 on affected runner images.
 
 ## Repository layout
 
