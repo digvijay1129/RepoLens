@@ -152,9 +152,13 @@ def validate_schema(
                  "foreign key": "foreign", "index": "indexes"}[label]
             ] - actual
             if missing:
+                present_names = ", ".join(
+                    sorted(str(name) for name in actual if name)
+                ) or "none"
                 issues.append(
                     f"Table '{table}' is missing {label}(s): "
                     + ", ".join(sorted(missing))
+                    + f" (found: {present_names})"
                 )
 
     if applied_revision != expected_revision:
