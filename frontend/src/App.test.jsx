@@ -117,6 +117,7 @@ const directory = {
 
 describe("RepoLens authenticated workspace and repository browsing", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     window.sessionStorage.clear();
     setAccessToken("test-access-token");
     getApiHealth.mockResolvedValue({ status: "ok" });
