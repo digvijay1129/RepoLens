@@ -510,6 +510,21 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     });
     expect(await screen.findByText("Token validation is delegated to authenticate_user [S1].")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /backend\/app\/auth\.py/ })).toHaveAttribute("href", expect.stringContaining("#L12-L28"));
+
+    const priorClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      await user.click(screen.getByRole("button", { name: /copy replens answer message-assistant-1/i }));
+      expect(writeText).toHaveBeenCalledWith("Token validation is delegated to authenticate_user [S1].");
+      expect(await screen.findByText("Copied")).toBeInTheDocument();
+    } finally {
+      if (priorClipboard) Object.defineProperty(navigator, "clipboard", priorClipboard);
+      else delete navigator.clipboard;
+    }
   });
 
   it("searches an indexed repository and renders a line-level source citation", async () => {

@@ -32,6 +32,15 @@ class EmbeddingProvider(Protocol):
 def get_embedding_configuration(settings: Settings | None = None) -> Settings:
     """Validate opt-in and required credentials without revealing secret values."""
     settings = settings or get_settings()
+    if (
+        settings.openrouter_api_key is not None
+        and settings.openrouter_api_key.get_secret_value().strip()
+    ):
+        settings = settings.model_copy(update={
+            "embeddings_api_key": settings.openrouter_api_key,
+            "embeddings_base_url": settings.openrouter_base_url,
+            "embeddings_model": settings.openrouter_embedding_model,
+        })
     if not settings.embeddings_enabled:
         raise EmbeddingConfigurationError(
             "Embeddings are disabled. Set EMBEDDINGS_ENABLED=true in backend/.env."
@@ -41,7 +50,7 @@ def get_embedding_configuration(settings: Settings | None = None) -> Settings:
         or not settings.embeddings_api_key.get_secret_value().strip()
     ):
         raise EmbeddingConfigurationError(
-            "The embedding provider is not configured. Set EMBEDDINGS_API_KEY in backend/.env."
+            "The embedding provider is not configured. Set OPENROUTER_API_KEY or the legacy EMBEDDINGS_API_KEY in backend/.env."
         )
     if settings.embeddings_provider.strip().lower() != "openai_compatible":
         raise EmbeddingConfigurationError(
@@ -83,13 +92,17 @@ class OpenAICompatibleEmbeddingProvider:
     async def __aenter__(self) -> "OpenAICompatibleEmbeddingProvider":
         secret = self.settings.embeddings_api_key
         assert secret is not None  # Enforced by get_embedding_configuration.
+        headers = {
+            "Authorization": "Bearer " + secret.get_secret_value(),
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if urlsplit(self.settings.embeddings_base_url).hostname == "openrouter.ai":
+            headers["HTTP-Referer"] = self.settings.openrouter_http_referer
+            headers["X-Title"] = self.settings.openrouter_app_title
         self._client = httpx.AsyncClient(
             base_url=self.settings.embeddings_base_url.rstrip("/") + "/",
-            headers={
-                "Authorization": "Bearer " + secret.get_secret_value(),
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+            headers=headers,
             timeout=httpx.Timeout(self.settings.embeddings_timeout_seconds),
             transport=self._transport,
             follow_redirects=False,
@@ -137,6 +150,10 @@ class OpenAICompatibleEmbeddingProvider:
         if response.status_code in {401, 403}:
             raise EmbeddingProviderError(
                 "The embedding provider rejected the configured credentials."
+            )
+        if response.status_code == 402:
+            raise EmbeddingProviderError(
+                "The embedding provider requires account credits or a billing change."
             )
         if response.status_code >= 500:
             raise EmbeddingProviderError(

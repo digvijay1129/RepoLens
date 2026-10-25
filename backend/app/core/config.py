@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = Field(default=60.0, ge=1.0, le=180.0)
     llm_max_completion_tokens: int = Field(default=1200, ge=128, le=4096)
+    llm_max_retries: int = Field(default=2, ge=0, le=3)
     rag_context_chunks: int = Field(default=8, ge=1, le=12)
     rag_history_messages: int = Field(default=8, ge=0, le=16)
 

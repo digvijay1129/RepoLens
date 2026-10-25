@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Activity, AlertCircle, ArrowLeft, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown,
+  Activity, AlertCircle, ArrowLeft, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown, Copy,
   CircleHelp, Clock3, Code2, ExternalLink, FileCode2, Folder, FolderOpen, GitBranch,
   GitFork, Github, LayoutDashboard, LifeBuoy, LoaderCircle, LockKeyhole, LogIn, LogOut,
   Mail, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck, Sparkles, Star,
@@ -698,6 +698,7 @@ function RepositoryChatPanel({ repository }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState("");
   const [loadingHistoryError, setLoadingHistoryError] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -744,6 +745,16 @@ function RepositoryChatPanel({ repository }) {
     setError("");
     setLoadingHistoryError("");
   }
+  async function handleCopyAnswer(message) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+    } catch {
+      setError("Clipboard access is unavailable in this browser. Select and copy the answer text manually.");
+    }
+  }
+
+
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -819,6 +830,13 @@ function RepositoryChatPanel({ repository }) {
               <div className="rag-chat-message-body">
                 <div className="rag-chat-message-label">{message.role === "assistant" ? "RepoLens" : "You"}</div>
                 <p>{message.content}</p>
+                {message.role === "assistant" && (
+                  <div className="rag-chat-answer-tools">
+                    <button className="rag-chat-copy-answer" type="button" onClick={() => handleCopyAnswer(message)} aria-label={"Copy RepoLens answer " + message.id}>
+                      {copiedMessageId === message.id ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy answer</>}
+                    </button>
+                  </div>
+                )}
                 {message.role === "assistant" && Array.isArray(message.sources) && message.sources.length > 0 && (
                   <div className="rag-chat-citations">
                     <span className="rag-chat-citations-title">Sources used</span>

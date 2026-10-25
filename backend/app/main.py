@@ -10,8 +10,8 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description="RepoLens combines pgvector retrieval with source-grounded repository chat.",
-    version="0.7.0",
+    description="RepoLens combines OpenRouter-compatible RAG chat, retrieval, and offline evaluation.",
+    version="0.8.0",
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",

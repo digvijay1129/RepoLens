@@ -304,3 +304,8 @@
 .rag-chat-composer-foot .button{flex-shrink:0}
 .rag-chat-history-loading{justify-content:center}
 @media(max-width:620px){.rag-chat-panel{padding:14px}.rag-chat-provider-pill{font-size:7px}.rag-chat-heading{align-items:flex-start}.rag-chat-provider-pill{padding:5px 6px}.rag-chat-toolbar{align-items:stretch;flex-direction:column}.rag-chat-composer-foot{align-items:flex-start;flex-direction:column}.rag-chat-composer-foot .button{width:100%;justify-content:center}.rag-chat-citations>a>em{font-size:8px}.rag-chat-messages{max-height:460px}}
+
+.rag-chat-answer-tools{display:flex;justify-content:flex-end;margin-top:7px}
+.rag-chat-copy-answer{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid #e5e9f2;border-radius:6px;background:#fff;color:#8792a8;font-size:9px;cursor:pointer}
+.rag-chat-copy-answer:hover{border-color:#d0d9ef;background:#fafbff;color:#6179b5}
+.rag-chat-copy-answer:focus-visible{outline:2px solid #99aee8;outline-offset:2px}

@@ -1,0 +1,2 @@
+{"query":"Where is the authentication token checked?","relevant_chunk_ids":["auth:12-28"],"retrieved_chunk_ids":["auth:12-28","routes:8-19"],"known_source_ids":["S1","S2"],"cited_source_ids":["S1"],"supported_source_ids":["S1"]}
+{"query":"How is the PostgreSQL connection built?","relevant_chunk_ids":["db:1-21"],"retrieved_chunk_ids":["models:3-12","db:1-21"],"known_source_ids":["S1","S2"],"cited_source_ids":["S3"],"supported_source_ids":["S2"]}

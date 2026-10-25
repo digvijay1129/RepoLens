@@ -6,23 +6,34 @@ Phase 6 connects Phase 5 retrieval to an OpenAI-compatible chat-completion API. 
 
 ## Configuration
 
-RAG chat is disabled by default and does not affect source indexing or keyword search. Set these values in `backend/.env` to enable it:
+RAG chat is disabled by default. OpenRouter is the recommended configuration and uses one server-side key for chat plus optional embeddings:
 
 ```dotenv
+OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_CHAT_MODEL=openai/gpt-5.6-luna
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+OPENROUTER_HTTP_REFERER=http://localhost:5173
+OPENROUTER_APP_TITLE=RepoLens
+
 LLM_ENABLED=true
-LLM_PROVIDER=openai_compatible
-LLM_API_KEY=your_private_chat_api_key
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=60
 LLM_MAX_COMPLETION_TOKENS=1200
+LLM_MAX_RETRIES=2
 RAG_CONTEXT_CHUNKS=8
 RAG_HISTORY_MESSAGES=8
+
+# Optional: required only for semantic/hybrid retrieval and embedding generation
+EMBEDDINGS_ENABLED=true
+EMBEDDINGS_DIMENSIONS=1536
+EMBEDDINGS_BATCH_SIZE=32
 ```
 
-Model and endpoint examples must match your provider's available models. Keep all keys backend-only, never commit `backend/.env`, and restart FastAPI after changing settings. Remote provider URLs must use HTTPS; plain HTTP is accepted only for localhost during non-production development.
+When `OPENROUTER_API_KEY` is non-empty, it overrides the legacy `LLM_API_KEY` and `EMBEDDINGS_API_KEY` credentials and the `OPENROUTER_*` base URL/model settings are used. Keep the key in `backend/.env`; never add it to frontend environment variables or Git. Set `OPENROUTER_HTTP_REFERER` to your deployed app origin in production. Chat-only mode uses keyword retrieval and does not require embeddings. Semantic/hybrid retrieval requires embeddings generated with the same model and dimensions.
 
-An LLM call may incur cost. For a repository with current embeddings matching the configured embedding model, chat uses hybrid retrieval; otherwise it uses keyword retrieval. This permits chat to work without embedding credentials, provided source indexing and a working LLM provider are configured.
+The configured model IDs are listed in the OpenRouter catalog. Provider availability, price, rate limits and data handling can change; check OpenRouter before deploying. See [OpenRouter chat model](https://openrouter.ai/openai/gpt-5.6-luna), [embedding model](https://openrouter.ai/openai/text-embedding-3-small/providers), and [embeddings API](https://openrouter.ai/docs/api/api-reference/embeddings/create-embeddings).
+
+LLM calls may incur cost. Retrieved source excerpts and selected chat history are sent to the configured provider, so review its retention/privacy terms and only index code you are authorized to share.
 
 ## Flow
 
