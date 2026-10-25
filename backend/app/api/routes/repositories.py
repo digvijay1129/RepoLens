@@ -15,6 +15,8 @@ from app.services.github_client import (
     GitHubPublicClient,
     get_github_client,
     parse_public_repository_url,
+    normalize_directory_path,
+    validate_repository_locator,
 )
 
 router = APIRouter()
@@ -64,7 +66,17 @@ async def list_repository_contents(
 ) -> RepositoryContentsResponse:
     """List directory entries and GitHub source links without returning file contents."""
     try:
-        payload = await github.list_directory(owner, repository, path=path, ref=ref)
+        owner, repository = validate_repository_locator(owner, repository)
+        normalized_path = normalize_directory_path(path)
+        if ref is not None and (
+            not ref.strip()
+            or len(ref) > 255
+            or any(ord(character) < 32 or ord(character) == 127 for character in ref)
+        ):
+            raise ValueError("The branch or ref is invalid.")
+        payload = await github.list_directory(
+            owner, repository, path=normalized_path, ref=ref
+        )
         return RepositoryContentsResponse.model_validate(payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -131,7 +131,7 @@ async def test_list_directory_encodes_path_and_branch_as_data() -> None:
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/repos/org/repo/contents/src%20files"
+        assert request.url.raw_path.startswith(b"/repos/org/repo/contents/src%20files?")
         assert request.url.params["ref"] == "feature/one"
         return httpx.Response(200, json=payload, request=request)
 
