@@ -4,12 +4,14 @@ import {
   deleteSavedRepository,
   getRepositoryBranches,
   getRepositoryContents,
+  getRepositoryIndexingJob,
   getSavedRepositories,
   inspectRepository,
   loginAccount,
   registerAccount,
   saveRepository,
   selectRepositoryBranch,
+  startRepositoryIndex,
   setAccessToken,
 } from "./api.js";
 
@@ -126,3 +128,29 @@ describe("RepoLens API client", () => {
     await expect(getRepositoryContents("owner", "missing")).rejects.toThrow(/not found/i);
   });
 });
+
+
+  it("starts indexing and reads the owner-scoped job progress endpoint", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({ id: "job-1", status: "queued" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "job-1", status: "completed", chunk_count: 11 }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+
+    const queued = await startRepositoryIndex("repo-1");
+    const completed = await getRepositoryIndexingJob("repo-1", queued.id);
+
+    expect(queued.status).toBe("queued");
+    expect(completed.chunk_count).toBe(11);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/index$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/repositories\/saved\/repo-1\/jobs\/job-1$/);
+  });

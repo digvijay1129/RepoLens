@@ -73,6 +73,12 @@ class Repository(Base):
     )
 
     owner: Mapped["User"] = relationship(back_populates="repositories")
+    chunks: Mapped[list["RepositoryChunk"]] = relationship(
+        back_populates="repository",
+        foreign_keys="[RepositoryChunk.repository_id, RepositoryChunk.user_id]",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     indexing_jobs: Mapped[list["IndexingJob"]] = relationship(
         back_populates="repository",
         foreign_keys="[IndexingJob.repository_id, IndexingJob.user_id]",

@@ -100,3 +100,24 @@ class BranchListResponse(BaseModel):
 class SelectBranchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     selected_branch: str = Field(min_length=1, max_length=255)
+
+
+
+class IndexingJobResponse(BaseModel):
+    """Safe status and progress of one owner-scoped indexing attempt."""
+
+    id: uuid.UUID
+    repository_id: uuid.UUID
+    status: str
+    attempt_count: int
+    total_files: int
+    processed_files: int
+    skipped_files: int
+    chunk_count: int
+    commit_sha: str | None
+    progress_message: str
+    error_message: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime

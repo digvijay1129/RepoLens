@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +14,7 @@ from app.api.dependencies import get_current_user
 from app.api.schemas.repository import (
     BranchListResponse,
     BranchOption,
+    IndexingJobResponse,
     RepositoryContentsResponse,
     RepositoryInspectRequest,
     RepositoryMetadata,
@@ -21,8 +22,10 @@ from app.api.schemas.repository import (
     SelectBranchRequest,
 )
 from app.db.session import get_db_session
+from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
 from app.models.user import User
+from app.services.indexing import run_indexing_job
 from app.services.github_client import (
     GitHubClientError,
     GitHubPublicClient,
@@ -81,6 +84,28 @@ def _get_owned_repository(
         # Use the same response for unknown IDs and other users' IDs.
         raise HTTPException(status_code=404, detail="Saved repository was not found.")
     return repository
+
+
+
+def _indexing_job_payload(job: IndexingJob) -> dict:
+    """Build a stable public payload without exposing worker internals."""
+    return {
+        "id": job.id,
+        "repository_id": job.repository_id,
+        "status": job.status,
+        "attempt_count": job.attempt_count,
+        "total_files": job.total_files,
+        "processed_files": job.processed_files,
+        "skipped_files": job.skipped_files,
+        "chunk_count": job.chunk_count,
+        "commit_sha": job.commit_sha,
+        "progress_message": job.progress_message,
+        "error_message": job.error_message,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
 
 
 def _to_datetime(value: datetime | str | None) -> datetime | None:
@@ -299,6 +324,72 @@ async def select_saved_repository_branch(
     db.commit()
     db.refresh(repository)
     return SavedRepositoryResponse.model_validate(_saved_repository_payload(repository))
+
+
+
+@router.post(
+    "/saved/{repository_id}/index",
+    response_model=IndexingJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue a safe source indexing job",
+)
+def start_repository_indexing(
+    repository_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> IndexingJobResponse:
+    """Queue one indexing job for an owned repository and return immediately."""
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    active_job = db.scalar(
+        select(IndexingJob)
+        .where(
+            IndexingJob.repository_id == repository.id,
+            IndexingJob.user_id == current_user.id,
+            IndexingJob.status.in_(["queued", "running"]),
+        )
+        .order_by(IndexingJob.created_at.desc())
+    )
+    if active_job is not None:
+        return IndexingJobResponse.model_validate(_indexing_job_payload(active_job))
+
+    job = IndexingJob(
+        repository_id=repository.id,
+        user_id=current_user.id,
+        status="queued",
+        progress_message="Queued for indexing.",
+    )
+    repository.indexing_status = "indexing"
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(run_indexing_job, job.id)
+    return IndexingJobResponse.model_validate(_indexing_job_payload(job))
+
+
+@router.get(
+    "/saved/{repository_id}/jobs/{job_id}",
+    response_model=IndexingJobResponse,
+    summary="Get progress for an owned repository indexing job",
+)
+def get_repository_indexing_job(
+    repository_id: uuid.UUID,
+    job_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> IndexingJobResponse:
+    """Return indexing status only when both the repository and job belong to the user."""
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    job = db.scalar(
+        select(IndexingJob).where(
+            IndexingJob.id == job_id,
+            IndexingJob.repository_id == repository.id,
+            IndexingJob.user_id == current_user.id,
+        )
+    )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Indexing job was not found.")
+    return IndexingJobResponse.model_validate(_indexing_job_payload(job))
 
 
 @router.get(

@@ -14,6 +14,8 @@ from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import get_db_session
 from app.main import app
+from app.api.routes import repositories as repository_routes
+from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
 from app.models.user import User
 from app.services import auth as auth_service
@@ -244,3 +246,58 @@ def test_user_cannot_use_expired_or_malformed_token(api_client: TestClient) -> N
         headers={"Authorization": "Bearer not-a-real-jwt"},
     )
     assert response.status_code == 401
+
+
+
+def test_indexing_job_api_is_authenticated_idempotent_and_owner_scoped(
+    api_client: TestClient,
+    monkeypatch,
+) -> None:
+    async def no_op_worker(job_id) -> None:
+        return None
+
+    monkeypatch.setattr(repository_routes, "run_indexing_job", no_op_worker)
+    first_user = create_account(api_client, "index-owner@example.com")
+    first_headers = {"Authorization": f"Bearer {first_user['access_token']}"}
+    saved_response = api_client.post(
+        "/api/v1/repositories/saved",
+        headers=first_headers,
+        json={"repository_url": "https://github.com/Digvijay1129/RepoLens"},
+    )
+    assert saved_response.status_code == 201
+    repository_id = saved_response.json()["id"]
+
+    queued = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/index",
+        headers=first_headers,
+    )
+    assert queued.status_code == 202
+    job = queued.json()
+    assert job["status"] == "queued"
+    assert job["processed_files"] == 0
+    assert job["chunk_count"] == 0
+
+    same_job = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/index",
+        headers=first_headers,
+    )
+    assert same_job.status_code == 202
+    assert same_job.json()["id"] == job["id"]
+
+    status_response = api_client.get(
+        f"/api/v1/repositories/saved/{repository_id}/jobs/{job['id']}",
+        headers=first_headers,
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["progress_message"] == "Queued for indexing."
+
+    second_user = create_account(api_client, "index-other@example.com")
+    second_headers = {"Authorization": f"Bearer {second_user['access_token']}"}
+    assert api_client.get(
+        f"/api/v1/repositories/saved/{repository_id}/jobs/{job['id']}",
+        headers=second_headers,
+    ).status_code == 404
+
+    assert api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/index",
+    ).status_code == 401

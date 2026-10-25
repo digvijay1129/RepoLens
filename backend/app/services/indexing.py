@@ -1,0 +1,345 @@
+"""Background indexing pipeline for public GitHub repositories.
+
+The worker only reads bounded UTF-8 text files, chunks them deterministically, and
+persists snapshots. It never imports or executes source from the indexed repository.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+import uuid
+from collections.abc import Callable
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.db.session import get_engine
+from app.models.indexing_job import IndexingJob
+from app.models.repository import Repository
+from app.models.repository_chunk import RepositoryChunk
+from app.services.github_client import GitHubClientError, GitHubPublicClient
+from app.services.source_ingestion import get_blob_text, get_commit_tree
+from app.services.source_parser import chunk_source_text, is_indexable_path
+
+logger = logging.getLogger(__name__)
+
+MAX_INDEX_FILES = 40
+MAX_INDEX_FILE_BYTES = 256 * 1024
+MAX_INDEX_TOTAL_BYTES = 5 * 1024 * 1024
+PROGRESS_COMMIT_EVERY_FILES = 1
+
+
+class IndexingPipelineError(RuntimeError):
+    """Safe, user-displayable indexing error."""
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _count_chunks(db: Session, repository_id: uuid.UUID, user_id: uuid.UUID, commit_sha: str) -> int:
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(RepositoryChunk)
+            .where(
+                RepositoryChunk.repository_id == repository_id,
+                RepositoryChunk.user_id == user_id,
+                RepositoryChunk.commit_sha == commit_sha,
+            )
+        )
+        or 0
+    )
+
+
+def _fail_job(
+    db: Session,
+    job_id: uuid.UUID,
+    *,
+    prior_commit_sha: str | None,
+    prior_status: str,
+    safe_message: str,
+) -> None:
+    """Record a safe error while preserving the last completed snapshot."""
+    db.rollback()
+    job = db.get(IndexingJob, job_id)
+    if job is None:
+        return
+    repository = db.scalar(
+        select(Repository).where(
+            Repository.id == job.repository_id,
+            Repository.user_id == job.user_id,
+        )
+    )
+    attempted_sha = job.commit_sha
+    if repository is not None:
+        if attempted_sha and (attempted_sha != prior_commit_sha or prior_status != "indexed"):
+            db.execute(
+                delete(RepositoryChunk).where(
+                    RepositoryChunk.repository_id == repository.id,
+                    RepositoryChunk.user_id == repository.user_id,
+                    RepositoryChunk.commit_sha == attempted_sha,
+                )
+            )
+        repository.indexing_status = "indexed" if prior_commit_sha and prior_status == "indexed" else "failed"
+
+    job.status = "failed"
+    job.error_message = safe_message[:1000]
+    job.progress_message = "Indexing failed. The previous completed snapshot was preserved."
+    job.finished_at = _now()
+    db.commit()
+
+
+async def run_indexing_job(
+    job_id: uuid.UUID | str,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+    github_client_factory: Callable[[], Any] | None = None,
+) -> None:
+    """Execute one queued indexing job. Intended for FastAPI BackgroundTasks."""
+    try:
+        normalized_job_id = job_id if isinstance(job_id, uuid.UUID) else uuid.UUID(str(job_id))
+    except (ValueError, TypeError, AttributeError):
+        return
+
+    factory = session_factory or sessionmaker(bind=get_engine(), expire_on_commit=False)
+    client_factory = github_client_factory or GitHubPublicClient
+
+    with factory() as db:
+        job = db.get(IndexingJob, normalized_job_id)
+        if job is None or job.status != "queued":
+            return
+
+        repository = db.scalar(
+            select(Repository).where(
+                Repository.id == job.repository_id,
+                Repository.user_id == job.user_id,
+            )
+        )
+        if repository is None:
+            job.status = "failed"
+            job.error_message = "The saved repository was not found."
+            job.progress_message = "Indexing failed."
+            job.finished_at = _now()
+            db.commit()
+            return
+
+        prior_commit_sha = repository.indexed_commit_sha
+        prior_status = repository.indexing_status
+        job.status = "running"
+        job.attempt_count += 1
+        job.started_at = _now()
+        job.finished_at = None
+        job.error_message = None
+        job.progress_message = "Resolving the selected GitHub branch."
+        repository.indexing_status = "indexing"
+        db.commit()
+
+        try:
+            async with client_factory() as github:
+                owner = repository.github_owner
+                name = repository.github_name
+                branches = await github.list_branches(owner, name)
+                selected_branch = next(
+                    (branch for branch in branches if branch.get("name") == repository.selected_branch),
+                    None,
+                )
+                if selected_branch is None or not isinstance(selected_branch.get("commit_sha"), str):
+                    raise IndexingPipelineError(
+                        "The selected branch was not found in the public GitHub branch list."
+                    )
+                commit_sha = selected_branch["commit_sha"]
+                if not re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha):
+                    raise IndexingPipelineError("GitHub returned an invalid commit reference.")
+
+                job.commit_sha = commit_sha
+                job.progress_message = "Reading the repository tree."
+                db.commit()
+
+                # No unnecessary API calls or duplicate chunks when this exact commit
+                # has already been indexed successfully.
+                if prior_commit_sha == commit_sha and prior_status == "indexed":
+                    existing_chunks = _count_chunks(db, repository.id, repository.user_id, commit_sha)
+                    existing_files = int(
+                        db.scalar(
+                            select(func.count(func.distinct(RepositoryChunk.file_path))).where(
+                                RepositoryChunk.repository_id == repository.id,
+                                RepositoryChunk.user_id == repository.user_id,
+                                RepositoryChunk.commit_sha == commit_sha,
+                            )
+                        )
+                        or 0
+                    )
+                    job.status = "completed"
+                    job.total_files = existing_files
+                    job.processed_files = existing_files
+                    job.skipped_files = 0
+                    job.chunk_count = existing_chunks
+                    job.progress_message = "This commit is already indexed; no source changes were needed."
+                    job.finished_at = _now()
+                    repository.indexing_status = "indexed"
+                    db.commit()
+                    return
+
+                tree = await get_commit_tree(github, owner, name, commit_sha)
+                blob_entries = [entry for entry in tree if entry.get("type") == "blob"]
+                candidates: list[dict[str, Any]] = []
+                skipped_files = 0
+
+                for entry in blob_entries:
+                    path = entry.get("path")
+                    size = entry.get("size")
+                    if (
+                        not isinstance(path, str)
+                        or entry.get("mode") == "120000"
+                        or not is_indexable_path(path)
+                    ):
+                        skipped_files += 1
+                        continue
+                    if not isinstance(size, int) or size < 0 or size > MAX_INDEX_FILE_BYTES:
+                        skipped_files += 1
+                        continue
+                    candidates.append(entry)
+
+                candidates.sort(key=lambda entry: str(entry["path"]).casefold())
+                total_size = 0
+                bounded_candidates: list[dict[str, Any]] = []
+                for entry in candidates:
+                    size = int(entry["size"])
+                    if len(bounded_candidates) >= MAX_INDEX_FILES:
+                        skipped_files += 1
+                        continue
+                    if total_size + size > MAX_INDEX_TOTAL_BYTES:
+                        skipped_files += 1
+                        continue
+                    bounded_candidates.append(entry)
+                    total_size += size
+
+                job.total_files = len(bounded_candidates)
+                job.processed_files = 0
+                job.skipped_files = skipped_files
+                job.chunk_count = 0
+                job.progress_message = (
+                    f"Found {len(bounded_candidates)} candidate files; applying size and file-type limits."
+                )
+                db.commit()
+
+                processed = 0
+                chunk_count = 0
+                actual_source_bytes = 0
+                for entry in bounded_candidates:
+                    path = str(entry["path"])
+                    try:
+                        source_text = await get_blob_text(
+                            github, owner, name, str(entry["sha"]), max_bytes=MAX_INDEX_FILE_BYTES
+                        )
+                    except GitHubClientError as exc:
+                        if exc.status_code in {413, 415}:
+                            skipped_files += 1
+                            processed += 1
+                            job.processed_files = processed
+                            job.skipped_files = skipped_files
+                            job.progress_message = f"Skipped unsupported text file ({processed}/{len(bounded_candidates)})."
+                            db.commit()
+                            continue
+                        raise
+
+                    actual_size = len(source_text.encode("utf-8"))
+                    if actual_source_bytes + actual_size > MAX_INDEX_TOTAL_BYTES:
+                        skipped_files += 1
+                        processed += 1
+                        job.processed_files = processed
+                        job.skipped_files = skipped_files
+                        job.progress_message = f"Skipped {path}: total source byte limit reached."
+                        db.commit()
+                        continue
+                    actual_source_bytes += actual_size
+
+                    pieces = chunk_source_text(path, source_text)
+                    if not pieces:
+                        skipped_files += 1
+                    else:
+                        rows: list[RepositoryChunk] = []
+                        for piece in pieces:
+                            text = str(piece["chunk_text"])
+                            rows.append(
+                                RepositoryChunk(
+                                    repository_id=repository.id,
+                                    user_id=repository.user_id,
+                                    commit_sha=commit_sha,
+                                    file_path=path,
+                                    language=str(piece["language"]),
+                                    chunk_index=int(piece["chunk_index"]),
+                                    start_line=int(piece["start_line"]),
+                                    end_line=int(piece["end_line"]),
+                                    content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                                    symbol_names=", ".join(str(name) for name in piece.get("symbol_names", []))[:1000],
+                                    token_count=len(text.split()),
+                                    chunk_text=text,
+                                )
+                            )
+                        db.add_all(rows)
+                        chunk_count += len(rows)
+
+                    processed += 1
+                    job.processed_files = processed
+                    job.skipped_files = skipped_files
+                    job.chunk_count = chunk_count
+                    job.progress_message = f"Indexed {path} ({processed}/{len(bounded_candidates)} files)."
+                    if processed % PROGRESS_COMMIT_EVERY_FILES == 0:
+                        db.commit()
+
+                # A completed snapshot is switched atomically at the DB level:
+                # consumers can keep reading the previous commit until this commit.
+                db.execute(
+                    delete(RepositoryChunk).where(
+                        RepositoryChunk.repository_id == repository.id,
+                        RepositoryChunk.user_id == repository.user_id,
+                        RepositoryChunk.commit_sha != commit_sha,
+                    )
+                )
+                repository.indexed_commit_sha = commit_sha
+                repository.indexing_status = "indexed"
+                repository.last_indexed_at = _now()
+                job.status = "completed"
+                job.processed_files = processed
+                job.skipped_files = skipped_files
+                job.chunk_count = chunk_count
+                job.error_message = None
+                job.progress_message = (
+                    f"Indexing completed with safety limits ({skipped_files} file(s) skipped)."
+                    if skipped_files
+                    else "Indexing completed successfully."
+                )
+                job.finished_at = _now()
+                db.commit()
+
+        except GitHubClientError as exc:
+            _fail_job(
+                db,
+                normalized_job_id,
+                prior_commit_sha=prior_commit_sha,
+                prior_status=prior_status,
+                safe_message=exc.detail,
+            )
+        except (IndexingPipelineError, ValueError) as exc:
+            _fail_job(
+                db,
+                normalized_job_id,
+                prior_commit_sha=prior_commit_sha,
+                prior_status=prior_status,
+                safe_message=str(exc),
+            )
+        except Exception:
+            logger.exception("RepoLens indexing job failed (job_id=%s)", normalized_job_id)
+            _fail_job(
+                db,
+                normalized_job_id,
+                prior_commit_sha=prior_commit_sha,
+                prior_status=prior_status,
+                safe_message="Indexing failed due to an internal error. Check backend logs.",
+            )

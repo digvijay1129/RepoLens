@@ -10,11 +10,13 @@ import {
   getCurrentUser,
   getRepositoryBranches,
   getRepositoryContents,
+  getRepositoryIndexingJob,
   getSavedRepositories,
   loginAccount,
   registerAccount,
   saveRepository,
   selectRepositoryBranch,
+  startRepositoryIndex,
   setAccessToken,
   deleteSavedRepository,
 } from "./lib/api.js";
@@ -27,11 +29,13 @@ vi.mock("./lib/api.js", () => ({
   getCurrentUser: vi.fn(),
   getRepositoryBranches: vi.fn(),
   getRepositoryContents: vi.fn(),
+  getRepositoryIndexingJob: vi.fn(),
   getSavedRepositories: vi.fn(),
   loginAccount: vi.fn(),
   registerAccount: vi.fn(),
   saveRepository: vi.fn(),
   selectRepositoryBranch: vi.fn(),
+  startRepositoryIndex: vi.fn(),
   deleteSavedRepository: vi.fn(),
 }));
 
@@ -115,6 +119,40 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
       may_be_truncated: false,
     });
     getRepositoryContents.mockResolvedValue(directory);
+    getRepositoryIndexingJob.mockResolvedValue({
+      id: "job-123",
+      repository_id: repository.id,
+      status: "completed",
+      attempt_count: 1,
+      total_files: 1,
+      processed_files: 1,
+      skipped_files: 3,
+      chunk_count: 5,
+      commit_sha: "a".repeat(40),
+      progress_message: "Indexing completed successfully.",
+      error_message: null,
+      started_at: "2026-10-25T00:00:00Z",
+      finished_at: "2026-10-25T00:00:05Z",
+      created_at: "2026-10-25T00:00:00Z",
+      updated_at: "2026-10-25T00:00:05Z",
+    });
+    startRepositoryIndex.mockResolvedValue({
+      id: "job-123",
+      repository_id: repository.id,
+      status: "completed",
+      attempt_count: 1,
+      total_files: 1,
+      processed_files: 1,
+      skipped_files: 3,
+      chunk_count: 5,
+      commit_sha: "a".repeat(40),
+      progress_message: "Indexing completed successfully.",
+      error_message: null,
+      started_at: "2026-10-25T00:00:00Z",
+      finished_at: "2026-10-25T00:00:05Z",
+      created_at: "2026-10-25T00:00:00Z",
+      updated_at: "2026-10-25T00:00:05Z",
+    });
     saveRepository.mockResolvedValue(repository);
     selectRepositoryBranch.mockImplementation(async (_id, selectedBranch) => ({
       ...repository,
@@ -329,3 +367,21 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(screen.getByText(/repository retrieval and AI chat will be connected in Phase 6/i)).toBeInTheDocument();
   });
 });
+
+
+  it("starts source indexing and shows the completed chunk snapshot", async () => {
+    const user = userEvent.setup();
+    getSavedRepositories.mockResolvedValueOnce([repository]);
+    render(<App />);
+    await screen.findByText("Recent repositories");
+    await user.click(screen.getByRole("button", { name: /^code explorer/i }));
+    await screen.findByRole("heading", { name: "Code explorer" });
+
+    expect(screen.getByRole("heading", { name: "Source indexing" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /index source files/i }));
+
+    expect(startRepositoryIndex).toHaveBeenCalledWith(repository.id);
+    expect(await screen.findByText("Indexing completed successfully.")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText(/Commit/)).toBeInTheDocument();
+  });

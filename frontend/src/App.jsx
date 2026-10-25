@@ -6,7 +6,7 @@ import {
   Mail, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck, Sparkles, Star,
   TerminalSquare, Trash2, UserRound, X,
 } from "lucide-react";
-import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getSavedRepositories, loginAccount, registerAccount, saveRepository, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
+import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getRepositoryIndexingJob, getSavedRepositories, loginAccount, registerAccount, saveRepository, startRepositoryIndex, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
 import { normalizeGitHubRepositoryUrl } from "./lib/githubRepository.js";
 
 const navigation = [
@@ -362,7 +362,11 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchSaving, setBranchSaving] = useState(false);
   const [branchError, setBranchError] = useState("");
+  const [indexJob, setIndexJob] = useState(null);
+  const [indexStarting, setIndexStarting] = useState(false);
+  const [indexError, setIndexError] = useState("");
   const selectedBranch = selectedRepository?.selected_branch || selectedRepository?.default_branch || "main";
+  const indexIsActive = indexJob && ["queued", "running"].includes(indexJob.status);
 
   useEffect(() => {
     let cancelled = false;
@@ -401,6 +405,58 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
       setBranchSaving(false);
     }
   }
+
+
+  async function handleStartIndexing() {
+    if (!selectedRepository?.id || indexStarting || indexIsActive) return;
+    setIndexStarting(true);
+    setIndexError("");
+    try {
+      const job = await startRepositoryIndex(selectedRepository.id);
+      setIndexJob(job);
+    } catch (requestError) {
+      setIndexError(requestError?.message || "Unable to start source indexing.");
+    } finally {
+      setIndexStarting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!indexJob || !["queued", "running"].includes(indexJob.status) || !selectedRepository?.id) {
+      return undefined;
+    }
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      try {
+        const latest = await getRepositoryIndexingJob(selectedRepository.id, indexJob.id);
+        if (cancelled) return;
+        if (["completed", "failed"].includes(latest.status)) {
+          try {
+            const savedRepositories = await getSavedRepositories();
+            if (cancelled) return;
+            const updated = savedRepositories.find((repository) => repository.id === selectedRepository.id);
+            if (updated) onRepositoryUpdated(updated);
+          } catch {
+            // Job status remains available even if the workspace refresh temporarily fails.
+          }
+          if (!cancelled) setIndexJob(latest);
+        } else {
+          setIndexJob(latest);
+          timer = window.setTimeout(poll, 1500);
+        }
+      } catch (requestError) {
+        if (cancelled) return;
+        setIndexError(requestError?.message || "Unable to refresh indexing progress.");
+        timer = window.setTimeout(poll, 3000);
+      }
+    };
+    timer = window.setTimeout(poll, 1000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [indexJob?.id, indexJob?.status, selectedRepository?.id, onRepositoryUpdated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -471,6 +527,36 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
         <div className="repository-summary-main"><span className="repository-card-icon"><Github size={22} /></span><div><h2>{selectedRepository.full_name}</h2><p>{selectedRepository.description || "No repository description provided."}</p><a href={selectedRepository.canonical_url} target="_blank" rel="noreferrer">Open on GitHub <ExternalLink size={13} /></a></div></div>
         {repositories.length > 1 && <label className="repo-switcher-label">Repository<select aria-label="Select repository" value={selectedRepository.full_name} onChange={(event) => { onSelectRepository(event.target.value); setPath(""); }}><option value="">Select a repository</option>{repositories.map((repository) => <option key={repository.full_name} value={repository.full_name}>{repository.full_name}</option>)}</select></label>}
         <div className="repository-summary-stats"><span><GitBranch size={14} /> {selectedRepository.default_branch}</span><span><Code2 size={14} /> {selectedRepository.language || "Unknown language"}</span><span><Star size={14} /> {selectedRepository.stargazers_count} stars</span><span><GitFork size={14} /> {selectedRepository.forks_count} forks</span></div>
+      </div>
+
+
+      <div className="indexing-panel panel">
+        <div className="indexing-panel-heading">
+          <div className="indexing-title-block">
+            <span className="indexing-icon"><Sparkles size={17} /></span>
+            <div><h2>Source indexing</h2><p>Fetch safe text files, split them into source-aware chunks, and save a versioned snapshot for later retrieval.</p></div>
+          </div>
+          <span className={"index-status-pill index-status-" + (indexJob?.status || selectedRepository.indexing_status || "pending")}>
+            {indexJob?.status || selectedRepository.indexing_status || "pending"}
+          </span>
+        </div>
+        <div className="indexing-panel-actions">
+          <div className="indexing-boundary-note"><ShieldCheck size={15} /><span>Never executes repository code. Files, size and total indexed bytes are bounded.</span></div>
+          <button className="button button-primary" type="button" onClick={handleStartIndexing} disabled={!selectedRepository.id || indexStarting || Boolean(indexIsActive)}>
+            {indexStarting || indexIsActive ? <><LoaderCircle className="spin" size={15} /> Indexing…</> : selectedRepository.indexing_status === "indexed" ? <>Re-index source <ArrowRight size={15} /></> : <>Index source files <ArrowRight size={15} /></>}
+          </button>
+        </div>
+        {indexError && <p className="field-error indexing-error" role="alert"><AlertCircle size={14} />{indexError}</p>}
+        {indexJob && <div className="indexing-job-details">
+          <div className="indexing-job-message"><span>{indexJob.progress_message}</span><strong>{indexJob.processed_files}/{indexJob.total_files} files</strong></div>
+          <progress className="index-progress-bar" max={Math.max(indexJob.total_files || 0, 1)} value={Math.min(indexJob.processed_files || 0, Math.max(indexJob.total_files || 0, 1))} aria-label="Indexing progress" />
+          <div className="indexing-job-metrics">
+            <span><strong>{indexJob.chunk_count || 0}</strong> chunks</span>
+            <span><strong>{indexJob.skipped_files || 0}</strong> skipped files</span>
+            {indexJob.commit_sha && <span>Commit <code>{indexJob.commit_sha.slice(0, 7)}</code></span>}
+          </div>
+          {indexJob.error_message && <p className="field-error indexing-error" role="alert"><AlertCircle size={14} />{indexJob.error_message}</p>}
+        </div>}
       </div>
 
       <div className="file-browser panel">

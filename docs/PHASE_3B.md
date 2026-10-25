@@ -83,4 +83,4 @@ npm run dev
 - Email verification, password reset/recovery, signup/login rate limiting, logout revocation, and production secret management are not implemented in this phase. Add these before exposing registration to the public internet.
 - Directory listing is public and read-only; this phase does not download or execute file contents, nor does it yet index repositories, create embeddings, use pgvector, or call an LLM.
 
-Phase 3B should be reviewed and run against the developer's PostgreSQL instance before moving on to Phase 4.
+Phase 3B should be reviewed and run against the developer's PostgreSQL instance before continuing with Phase 4A source indexing.
