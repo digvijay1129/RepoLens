@@ -1,72 +1,24 @@
 # Phase 2A — PostgreSQL persistence foundation
 
-## Goal
+Phase 2A introduced SQLAlchemy, PostgreSQL connectivity, core persistence models, the initial Alembic migration, and a database-aware readiness endpoint.
 
-Add the persistence foundation before exposing repository CRUD APIs. This phase introduces SQLAlchemy, Alembic, PostgreSQL connectivity, an initial schema, and database-aware readiness.
+Tables:
+- users: a workspace owner identity (authentication remains a later phase).
+- repositories: owner ID, GitHub repository metadata, indexing status, commit SHA and timestamps.
+- indexing_jobs: owner/repository IDs, state, attempt count and timestamps.
 
-## Included
+The database schema includes unique constraints, check constraints, indexes, foreign keys, and a composite repository-owner relationship so a job must belong to the same user as its repository.
 
-- SQLAlchemy 2 declarative base and predictable constraint naming
-- PostgreSQL psycopg 3 driver, pooled engine, and request-scoped session dependency
-- DATABASE_URL validation and normalization to `postgresql+psycopg://`
-- Initial schema for users, repositories, and indexing jobs
-- Ownership constraints: indexing jobs must match the repository owner
-- Unique repository ownership/name constraint and status/attempt-count checks
-- Alembic environment and a reversible initial migration
-- Readiness check using `SELECT 1`; safe HTTP 503 if the database is missing or unavailable
-- SQLite schema/model tests and CI generation of PostgreSQL migration SQL
+The Phase 2A migration initially received doubled check-constraint names because explicitly prefixed names were passed through the SQLAlchemy naming convention. Phase 2B adds a follow-up Alembic revision to rename those constraints in place. This preserves migration history and allows a database already at revision 20261025_0001 to upgrade normally.
 
-## Tables
-
-### `users`
-Workspace owner identity: UUID primary key, normalized email, optional display name, and timestamps. Authentication is deferred.
-
-### `repositories`
-Owner ID, GitHub owner/name, canonical full name and URL, default branch, indexed commit SHA, indexing status, timestamps, and last indexed time. Duplicate normalized repositories for the same user are rejected.
-
-### `indexing_jobs`
-Owner and repository IDs, status, attempt count, bounded error text, timestamps, and indexes for owner/status history. A composite foreign key enforces that a job's user matches its repository's user.
-
-## Not included yet
-
-- pgvector extension or embedding columns
-- GitHub API calls, OAuth, repository downloads, or private-repository access
-- Code-chunk persistence or worker execution
-- CRUD routes, authentication, or request-level user authorization
-- RAG retrieval, LLM calls, chat persistence, Docker, or production deployment
-
-Models are data-layer foundations only. Do not expose them in public routes until identity and authorization are implemented.
-
-## Local setup
-
-1. Install PostgreSQL 16+ and start its service.
-2. Create a local database and user with pgAdmin or `psql` (example SQL is in the README).
-3. From `backend/`, create and activate the Python virtual environment, then run `pip install -r requirements.txt`.
-4. Copy `.env.example` to `.env` and configure `DATABASE_URL`.
-5. Run `alembic upgrade head`, then `alembic current`.
-6. Run `uvicorn app.main:app --reload`.
-7. Confirm readiness returns `{"status":"ready","database":"ok"}` only when a database connection succeeds.
-
-## Tests and migration generation
-
-From `backend/`:
+To configure a local PostgreSQL database, set DATABASE_URL in backend/.env, then run:
 
 ```powershell
-pytest
-alembic upgrade head --sql
+cd backend
+alembic upgrade head
+alembic current
 ```
 
-`alembic upgrade head --sql` generates migration SQL without connecting or applying it. CI verifies this offline generation. Local `alembic upgrade head` is required to test connectivity and apply the schema to PostgreSQL.
+Phase 2B adds live PostgreSQL CI, schema verification, and database-session hardening. See the Phase 2B documentation.
 
-## Acceptance checklist
-
-- [ ] Backend tests pass.
-- [ ] Frontend tests and the production build pass.
-- [ ] Alembic can render PostgreSQL migration SQL.
-- [ ] Locally, `alembic upgrade head` creates all three tables and constraints.
-- [ ] Liveness remains healthy without a database.
-- [ ] Readiness returns HTTP 503 when `DATABASE_URL` is absent or PostgreSQL is unreachable, without leaking secrets.
-- [ ] Readiness reports database OK when PostgreSQL is reachable.
-- [ ] No `.env`, passwords, or tokens are committed.
-
-Phase 2A implements the schema layer only; it does not enable persisted repository APIs.
+This schema is only the persistence foundation. It does not yet enable repository CRUD endpoints, authentication, GitHub API calls, code chunking, pgvector embeddings, RAG or LLM chat.

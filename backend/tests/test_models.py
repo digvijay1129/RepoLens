@@ -109,3 +109,63 @@ def test_duplicate_repository_for_same_user_is_rejected(session: Session) -> Non
     session.add(Repository(**values))
     with pytest.raises(IntegrityError):
         session.commit()
+    session.rollback()
+
+
+def test_email_must_be_lowercase(session: Session) -> None:
+    session.add(User(email="UpperCase@example.com"))
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_repository_indexing_status_is_constrained(session: Session) -> None:
+    user = User(email="status@example.com")
+    session.add(user)
+    session.flush()
+    session.add(
+        Repository(
+            user_id=user.id,
+            github_owner="org",
+            github_name="project",
+            full_name="org/project",
+            canonical_url="https://github.com/org/project",
+            indexing_status="unsupported",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+@pytest.mark.parametrize(
+    "status,attempt_count",
+    [("unsupported", 0), ("queued", -1)],
+)
+def test_indexing_job_status_and_attempt_count_are_constrained(
+    session: Session, status: str, attempt_count: int
+) -> None:
+    user = User(email=f"job-{status}-{attempt_count}@example.com")
+    session.add(user)
+    session.flush()
+    repository = Repository(
+        user_id=user.id,
+        github_owner="org",
+        github_name="project",
+        full_name="org/project",
+        canonical_url="https://github.com/org/project",
+    )
+    session.add(repository)
+    session.flush()
+    session.add(
+        IndexingJob(
+            user_id=user.id,
+            repository_id=repository.id,
+            status=status,
+            attempt_count=attempt_count,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
