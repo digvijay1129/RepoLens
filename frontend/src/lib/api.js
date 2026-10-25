@@ -136,6 +136,19 @@ export async function selectRepositoryBranch(repositoryId, selectedBranch) {
   });
 }
 
+export async function startRepositoryIndex(repositoryId) {
+  return requestJson("/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) + "/index", {
+    method: "POST",
+  });
+}
+
+export async function getRepositoryIndexingJob(repositoryId, jobId) {
+  return requestJson(
+    "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) +
+    "/jobs/" + encodeURIComponent(jobId),
+  );
+}
+
 export async function getRepositoryContents(owner, repository, options = {}) {
   const params = new URLSearchParams();
   if (options.path) params.set("path", options.path);

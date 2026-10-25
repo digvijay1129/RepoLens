@@ -30,13 +30,17 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
 
-    assert set(inspector.get_table_names()) == {"users", "repositories", "indexing_jobs"}
+    assert set(inspector.get_table_names()) == {"users", "repositories", "indexing_jobs", "repository_chunks"}
     assert "uq_repositories_user_full_name" in {
         constraint["name"] for constraint in inspector.get_unique_constraints("repositories")
     }
     assert {index["name"] for index in inspector.get_indexes("indexing_jobs")} == {
         "ix_indexing_jobs_repository_created",
         "ix_indexing_jobs_user_status_created",
+    }
+    assert {index["name"] for index in inspector.get_indexes("repository_chunks")} == {
+        "ix_repository_chunks_user_repo_commit",
+        "ix_repository_chunks_user_repo_path",
     }
     engine.dispose()
 

@@ -170,3 +170,34 @@
 @media(max-width:720px){.auth-layout{grid-template-columns:1fr;max-width:480px;gap:24px}.auth-intro{padding-bottom:0}.auth-intro h1{font-size:40px;letter-spacing:-1.7px}.auth-intro>p{font-size:12px}.auth-benefits{gap:9px;margin:17px 0}.auth-illustration{display:none}.auth-brand{margin-bottom:27px}.auth-card{padding:22px}.auth-footer{flex-direction:column;align-items:flex-start}.current-user-email{display:none}.branch-select-label{max-width:60%;min-width:135px}}
 
 .profile-auth-dot{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:#53b99a;box-shadow:0 0 0 3px rgba(83,185,154,.12)}
+
+
+/* Phase 4A — safe source indexing and job progress */
+.indexing-panel{display:grid;gap:14px;padding:18px 20px}
+.indexing-panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.indexing-title-block{display:flex;align-items:flex-start;gap:11px;min-width:0}
+.indexing-icon{width:36px;height:36px;display:grid;place-items:center;flex-shrink:0;border:1px solid #e5defd;background:#f5f2ff;color:#8068df;border-radius:10px}
+.indexing-title-block h2{margin:1px 0 5px;color:#303951;font:700 13px Manrope,sans-serif}
+.indexing-title-block p{margin:0;max-width:620px;color:#8790a4;font-size:10px;line-height:1.65}
+.index-status-pill{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:5px 8px;max-width:130px;overflow-wrap:anywhere;border:1px solid #e6e7f0;border-radius:6px;background:#fafbfe;color:#818ba1;font:8px var(--mono);text-transform:uppercase;letter-spacing:.35px}
+.index-status-indexed,.index-status-completed{border-color:#d7eee4;background:#f0faf5;color:#388c72}
+.index-status-indexing,.index-status-running,.index-status-queued{border-color:#e5dffc;background:#f6f3ff;color:#8067dc}
+.index-status-failed{border-color:#f1dce2;background:#fff5f7;color:#b96178}
+.indexing-panel-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:13px;border-top:1px solid #f0f1f6}
+.indexing-boundary-note{display:flex;align-items:flex-start;gap:7px;color:#939bb0;font-size:9px;line-height:1.6}
+.indexing-boundary-note svg{flex-shrink:0;color:#8a78d4}
+.indexing-panel-actions .button{flex-shrink:0}
+.indexing-job-details{padding:12px 13px;border:1px solid #eceaf8;border-radius:9px;background:#fcfbff}
+.indexing-job-message{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;color:#788299;font-size:10px;line-height:1.55}
+.indexing-job-message>span{overflow-wrap:anywhere}
+.indexing-job-message>strong{flex-shrink:0;color:#555f78;font:600 9px var(--mono)}
+.index-progress-bar{display:block;width:100%;height:7px;margin:11px 0;border:0;border-radius:99px;overflow:hidden;background:#e9e7f5;accent-color:#8975df}
+.index-progress-bar::-webkit-progress-bar{background:#e9e7f5;border-radius:99px}
+.index-progress-bar::-webkit-progress-value{background:linear-gradient(90deg,#9a86ec,#7c69db);border-radius:99px;transition:width .25s}
+.index-progress-bar::-moz-progress-bar{background:#8975df;border-radius:99px}
+.indexing-job-metrics{display:flex;align-items:center;gap:8px 17px;flex-wrap:wrap;color:#929aae;font-size:9px}
+.indexing-job-metrics span{display:inline-flex;align-items:center;gap:4px}
+.indexing-job-metrics strong{color:#6657bb;font:600 10px var(--mono)}
+.indexing-job-metrics code{padding:3px 5px;border:1px solid #e8e6f4;border-radius:4px;background:#f5f4fc;color:#7d6ac8;font:9px var(--mono)}
+.indexing-error{margin:0;padding:8px 10px;border-radius:7px;background:#fff7f7;font-size:10px}
+@media(max-width:680px){.indexing-panel{padding:14px}.indexing-panel-heading{align-items:flex-start}.indexing-panel-actions{align-items:stretch;flex-direction:column}.indexing-panel-actions .button{width:100%}.indexing-job-message{flex-direction:column;gap:4px}}

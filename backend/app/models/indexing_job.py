@@ -33,6 +33,10 @@ class IndexingJob(Base):
             name="status_allowed",
         ),
         CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
+        CheckConstraint("total_files >= 0", name="total_files_nonnegative"),
+        CheckConstraint("processed_files >= 0", name="processed_files_nonnegative"),
+        CheckConstraint("skipped_files >= 0", name="skipped_files_nonnegative"),
+        CheckConstraint("chunk_count >= 0", name="chunk_count_nonnegative"),
         Index("ix_indexing_jobs_user_status_created", "user_id", "status", "created_at"),
         Index("ix_indexing_jobs_repository_created", "repository_id", "created_at"),
     )
@@ -47,6 +51,14 @@ class IndexingJob(Base):
     )
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    processed_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    skipped_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    progress_message: Mapped[str] = mapped_column(
+        String(250), nullable=False, default="Queued for indexing", server_default="Queued for indexing"
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

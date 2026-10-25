@@ -54,10 +54,32 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "status",
         "attempt_count",
         "error_message",
+        "total_files",
+        "processed_files",
+        "skipped_files",
+        "chunk_count",
+        "commit_sha",
+        "progress_message",
         "started_at",
         "finished_at",
         "created_at",
         "updated_at",
+    },
+    "repository_chunks": {
+        "id",
+        "repository_id",
+        "user_id",
+        "commit_sha",
+        "file_path",
+        "language",
+        "chunk_index",
+        "start_line",
+        "end_line",
+        "content_hash",
+        "symbol_names",
+        "token_count",
+        "chunk_text",
+        "created_at",
     },
 }
 
@@ -88,6 +110,10 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "check": {
             "ck_indexing_jobs_status_allowed",
             "ck_indexing_jobs_attempt_count_nonnegative",
+            "ck_indexing_jobs_total_files_nonnegative",
+            "ck_indexing_jobs_processed_files_nonnegative",
+            "ck_indexing_jobs_skipped_files_nonnegative",
+            "ck_indexing_jobs_chunk_count_nonnegative",
         },
         "foreign": {
             "fk_indexing_jobs_user_id_users",
@@ -96,6 +122,21 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "indexes": {
             "ix_indexing_jobs_user_status_created",
             "ix_indexing_jobs_repository_created",
+        },
+    },
+    "repository_chunks": {
+        "primary": {"pk_repository_chunks"},
+        "unique": {"uq_repository_chunks_repo_snapshot_file_chunk"},
+        "check": {
+            "ck_repository_chunks_chunk_index_nonnegative",
+            "ck_repository_chunks_start_line_positive",
+            "ck_repository_chunks_end_line_valid",
+            "ck_repository_chunks_token_count_nonnegative",
+        },
+        "foreign": {"fk_repository_chunks_repository_owner"},
+        "indexes": {
+            "ix_repository_chunks_user_repo_commit",
+            "ix_repository_chunks_user_repo_path",
         },
     },
 }

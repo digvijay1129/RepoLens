@@ -2,6 +2,7 @@
 
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
+from app.models.repository_chunk import RepositoryChunk
 from app.models.user import User
 
-__all__ = ["User", "Repository", "IndexingJob"]
+__all__ = ["User", "Repository", "RepositoryChunk", "IndexingJob"]
