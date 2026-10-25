@@ -83,7 +83,7 @@ async def test_provider_sorts_reversed_response_by_index_and_validates_vectors()
     "payload, texts, expected_message",
     [
         ({"data": [{"index": 0, "embedding": [1, 2]}]}, ["text"], "unexpected dimension"),
-        ({"data": [{"index": 0, "embedding": [float("inf"), 2, 3]}]}, ["text"], "non-finite"),
+        ('{"data":[{"index":0,"embedding":[1e999,2,3]}]}', ["text"], "non-finite"),
         (
             {"data": [{"index": 0, "embedding": [1, 2, 3]}, {"index": 0, "embedding": [3, 2, 1]}]},
             ["first", "second"],
@@ -93,6 +93,13 @@ async def test_provider_sorts_reversed_response_by_index_and_validates_vectors()
 )
 async def test_provider_rejects_invalid_provider_responses(payload, texts, expected_message) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if isinstance(payload, str):
+            return httpx.Response(
+                200,
+                content=payload,
+                headers={"Content-Type": "application/json"},
+                request=request,
+            )
         return httpx.Response(200, json=payload, request=request)
 
     provider = OpenAICompatibleEmbeddingProvider(

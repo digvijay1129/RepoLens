@@ -13,7 +13,7 @@ from app.models.repository_chunk import RepositoryChunk
 from app.models.repository_chunk_embedding import RepositoryChunkEmbedding
 from app.models.user import User
 from app.services.github_client import GitHubClientError
-from app.services.indexing import run_indexing_job
+from app.services.indexing import run_embedding_job, run_indexing_job
 
 COMMIT_SHA = "a" * 40
 OLD_COMMIT_SHA = "c" * 40
