@@ -366,8 +366,6 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(await screen.findByText(/Question suggestion preview/i)).toBeInTheDocument();
     expect(screen.getByText(/repository retrieval and AI chat will be connected in Phase 6/i)).toBeInTheDocument();
   });
-});
-
 
   it("starts source indexing and shows the completed chunk snapshot", async () => {
     const user = userEvent.setup();
@@ -385,3 +383,5 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText(/Commit/)).toBeInTheDocument();
   });
+
+});
