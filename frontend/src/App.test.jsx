@@ -518,7 +518,7 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
       value: { writeText },
     });
     try {
-      await user.click(screen.getByRole("button", { name: /copy replens answer message-assistant-1/i }));
+      await user.click(screen.getByRole("button", { name: /copy repolens answer message-assistant-1/i }));
       expect(writeText).toHaveBeenCalledWith("Token validation is delegated to authenticate_user [S1].");
       expect(await screen.findByText("Copied")).toBeInTheDocument();
     } finally {

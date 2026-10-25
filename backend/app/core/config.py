@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr | None = Field(default=None, repr=False)
     jwt_access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
 
+    # OpenRouter can use one backend-only key for both chat and embeddings.
+    openrouter_api_key: SecretStr | None = Field(default=None, repr=False)
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_chat_model: str = "openai/gpt-5.6-luna"
+    openrouter_embedding_model: str = "openai/text-embedding-3-small"
+    openrouter_http_referer: str = "http://localhost:5173"
+    openrouter_app_title: str = "RepoLens"
+
     # Embeddings are opt-in. Source indexing continues to work when disabled.
     embeddings_enabled: bool = False
     embeddings_provider: str = "openai_compatible"
