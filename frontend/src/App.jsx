@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle, ArrowRight, ArrowUpRight, Bot, Check, ChevronDown,
   CircleHelp, Clock3, Code2, FileCode2, GitBranch, Github, LayoutDashboard,
@@ -6,6 +6,7 @@ import {
   Sparkles, TerminalSquare, X,
 } from "lucide-react";
 import { getApiHealth } from "./lib/api.js";
+import { normalizeGitHubRepositoryUrl } from "./lib/githubRepository.js";
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -39,29 +40,66 @@ function ApiStatus({ status }) {
 function ConnectModal({ onClose, onNotice }) {
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [error, setError] = useState("");
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const dialog = dialogRef.current;
+    dialog?.querySelector("#repository-url")?.focus();
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'),
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [onClose]);
 
   function handleSubmit(event) {
     event.preventDefault();
     setError("");
-    let parsed;
+
+    let repository;
     try {
-      parsed = new URL(repositoryUrl.trim());
-    } catch {
-      setError("Enter a valid GitHub repository URL.");
+      repository = normalizeGitHubRepositoryUrl(repositoryUrl);
+    } catch (validationError) {
+      setError(validationError.message);
       return;
     }
-    const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parsed.protocol !== "https:" || parsed.hostname.toLowerCase() !== "github.com" || parts.length < 2 || parts.some((part) => part === "." || part === "..")) {
-      setError("Use a repository URL like https://github.com/owner/repository.");
-      return;
-    }
+
     onClose();
-    onNotice("The URL format is valid. GitHub connection and indexing are planned for Phase 3; nothing has been stored yet.");
+    onNotice(
+      "The URL format is valid for " + repository.owner + "/" + repository.repository +
+      ". GitHub connection and indexing are planned for Phase 3; nothing has been stored yet.",
+    );
   }
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="connect-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <section ref={dialogRef} className="connect-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close dialog"><X size={18} /></button>
         <div className="modal-icon"><Github size={23} /></div>
         <span className="eyebrow">START WITH A REPOSITORY</span>
@@ -71,9 +109,9 @@ function ConnectModal({ onClose, onNotice }) {
           <label htmlFor="repository-url">GitHub repository URL</label>
           <div className={"input-with-icon" + (error ? " input-with-icon--error" : "")}>
             <Github size={18} />
-            <input id="repository-url" type="url" placeholder="https://github.com/owner/repository" value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} autoFocus aria-describedby={error ? "repository-error" : "repository-help"} />
+            <input id="repository-url" type="url" placeholder="https://github.com/owner/repository" value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} autoFocus aria-invalid={Boolean(error)} aria-describedby={error ? "repository-error" : "repository-help"} />
           </div>
-          {error ? <p className="field-error" id="repository-error"><AlertCircle size={14} />{error}</p> : <p className="field-help" id="repository-help">Public repositories first. Private repository authorization will come later.</p>}
+          {error ? <p className="field-error" id="repository-error" role="alert"><AlertCircle size={14} />{error}</p> : <p className="field-help" id="repository-help">Public repositories first. Private repository authorization will come later.</p>}
           <div className="modal-note"><ShieldCheck size={17} /><span>Phase 1 preview: this checks the URL format only. It will not access or save repository data.</span></div>
           <button className="button button-primary button-full" type="submit">Validate repository URL <ArrowRight size={16} /></button>
         </form>
