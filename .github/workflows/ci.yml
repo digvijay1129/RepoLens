@@ -30,6 +30,20 @@ jobs:
   backend-tests:
     name: Backend tests and live PostgreSQL schema verification
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: repolens_user
+          POSTGRES_PASSWORD: repolens_ci_password
+          POSTGRES_DB: repolens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U repolens_user -d repolens"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,22 +55,10 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r backend/requirements.txt
-      - name: Install pgvector extension without Docker
+      - name: Configure live PostgreSQL connection
         run: |
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y postgresql-18-pgvector
-      - name: Start local PostgreSQL without Docker
-        shell: bash
-        run: |
-          sudo service postgresql start
-          CI_DB_PASSWORD="$(openssl rand -hex 24)"
-          echo "DATABASE_URL=postgresql+psycopg://repolens_user:${CI_DB_PASSWORD}@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
-          echo "REPOLENS_TEST_DATABASE_URL=postgresql+psycopg://repolens_user:${CI_DB_PASSWORD}@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
-          sudo -u postgres psql -v ON_ERROR_STOP=1 -v repolens_password="$CI_DB_PASSWORD" <<'SQL'
-          CREATE ROLE repolens_user WITH LOGIN PASSWORD :'repolens_password';
-          SQL
-          sudo -u postgres createdb --owner=repolens_user repolens
-          sudo -u postgres psql -d repolens -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+          echo "DATABASE_URL=postgresql+psycopg://repolens_user:repolens_ci_password@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
+          echo "REPOLENS_TEST_DATABASE_URL=postgresql+psycopg://repolens_user:repolens_ci_password@127.0.0.1:5432/repolens" >> "$GITHUB_ENV"
       - name: Apply schema migration to PostgreSQL
         working-directory: backend
         run: python -m alembic upgrade head
@@ -68,7 +70,7 @@ jobs:
         run: python -m app.db.schema_check
       - name: Render PostgreSQL migration SQL without a connection
         working-directory: backend
-        run: python -m alembic upgrade head --sql > /tmp/repolens-migration.sql
+        run: python -m alembic upgrade head --sql > "$RUNNER_TEMP/repolens-migration.sql"
 
   frontend-quality:
     name: Frontend tests and production build
@@ -80,9 +82,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.12"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: npm ci
       - name: Run frontend unit tests
         working-directory: frontend
         run: npm test
@@ -104,11 +108,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Package source-only release and validate archive
-        run: python scripts/package_release.py --output "$RUNNER_TEMP/RepoLens-Phase8-Release.zip"
-      - name: Upload validated release ZIP
+        run: python scripts/package_release.py --output "$RUNNER_TEMP/RepoLens-Release.zip"
+      - name: Upload validated source release
         uses: actions/upload-artifact@v4
         with:
-          name: RepoLens-Phase8-Release
-          path: ${{ runner.temp }}/RepoLens-Phase8-Release.zip
+          name: RepoLens-Release
+          path: ${{ runner.temp }}/RepoLens-Release.zip
           if-no-files-found: error
           retention-days: 30
