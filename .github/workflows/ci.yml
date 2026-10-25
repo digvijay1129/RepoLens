@@ -9,6 +9,8 @@ on:
       - "phase-2/**"
       - "phase-2a/**"
       - "phase-2b/**"
+      - "phase-3/**"
+      - "phase-3a/**"
   pull_request:
     branches:
       - main

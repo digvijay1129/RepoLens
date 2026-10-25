@@ -10,8 +10,8 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description="API foundation for the RepoLens GitHub Codebase Intelligence Assistant.",
-    version="0.1.0",
+    description="Public GitHub repository inspection and browsing foundation for RepoLens.",
+    version="0.2.0",
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
