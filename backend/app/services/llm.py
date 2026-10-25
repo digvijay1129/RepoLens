@@ -108,7 +108,5 @@ async def complete_chat(
         raise LLMProviderError("The chat provider returned an empty answer.")
     answer = answer.strip()
     if len(answer) > 20000:
-        answer = answer[:19970].rstrip() + "
-
-[Answer truncated to the maximum supported length.]"
+        answer = answer[:19970].rstrip() + "\n\n[Answer truncated to the maximum supported length.]"
     return answer
