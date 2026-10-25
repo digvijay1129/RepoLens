@@ -1,7 +1,8 @@
-"""Contract tests for the Phase 1A health endpoints."""
+"""Contract tests for service and database readiness endpoints."""
 
 from fastapi.testclient import TestClient
 
+from app.api.routes import health
 from app.main import app
 
 client = TestClient(app)
@@ -15,16 +16,36 @@ def test_root_returns_service_information() -> None:
     assert payload["version"] == "0.1.0"
 
 
-def test_liveness_endpoint_returns_ok() -> None:
+def test_liveness_endpoint_does_not_require_database(monkeypatch) -> None:
+    def unexpected_database_call() -> None:
+        raise AssertionError("Liveness must not open database connections.")
+
+    monkeypatch.setattr(health, "check_database_connection", unexpected_database_call)
     response = client.get("/api/v1/health/live")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_readiness_endpoint_returns_ready() -> None:
+def test_readiness_endpoint_reports_database_available(monkeypatch) -> None:
+    monkeypatch.setattr(health, "check_database_connection", lambda: None)
+
     response = client.get("/api/v1/health/ready")
+
     assert response.status_code == 200
-    assert response.json() == {"status": "ready"}
+    assert response.json() == {"status": "ready", "database": "ok"}
+
+
+def test_readiness_endpoint_fails_safely_when_database_is_unavailable(monkeypatch) -> None:
+    def unavailable() -> None:
+        raise RuntimeError("postgresql://secret-user:super-secret@localhost/private")
+
+    monkeypatch.setattr(health, "check_database_connection", unavailable)
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready", "dependency": "database"}
+    assert "super-secret" not in response.text
+    assert "localhost" not in response.text
 
 
 def test_openapi_documents_health_routes() -> None:

@@ -1,104 +1,108 @@
 # RepoLens
 
-**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed answers using retrieval-augmented generation (RAG).
+**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed RAG answers.
 
-> Current milestone: Phase 1B — foundation hardening, accessible repository URL validation, and frontend test coverage. GitHub ingestion, PostgreSQL/pgvector, embeddings, and LLM chat are added in later verified phases.
+> Current milestone: Phase 2A — PostgreSQL persistence foundation, migrations, and database-aware readiness. GitHub ingestion, embeddings, vector retrieval, and LLM chat are later phases.
 
-## Technology stack
+## Stack
 
-- **Frontend:** React, Vite, JavaScript (JSX), CSS — no TypeScript
-- **Backend:** Python 3.12+, FastAPI, Pydantic Settings
-- **Planned data layer:** PostgreSQL + pgvector
-- **Planned integrations:** GitHub REST API, embedding API, LLM API
-- **Constraints:** no Docker and no model training
-
-## Repository layout
-
-- `backend/` — FastAPI application and backend tests
-- `frontend/` — React app, URL validation helper, and frontend tests
-- `docs/PHASE_1.md` — original foundation scope
-- `docs/PHASE_1B.md` — current improvements and verification steps
+- Frontend: React, Vite, JavaScript/JSX, CSS — no TypeScript
+- Backend: Python 3.12+, FastAPI, SQLAlchemy 2, Alembic, psycopg 3
+- Database: PostgreSQL 16+
+- Planned vector retrieval: pgvector, introduced with the indexing/retrieval phases
+- Constraints: no Docker and no model training
 
 ## Prerequisites
 
-Install Python 3.12+, Node.js 22.12+ with npm, and Git. VS Code is recommended. PostgreSQL is not required until Phase 2.
+Install Python 3.12+, Node.js 22.12+ with npm, Git, and PostgreSQL 16+. VS Code is recommended.
 
-## Run locally
+## Create a local database
 
-### 1. Start the backend
+Use pgAdmin or `psql`. Example SQL, run as your local PostgreSQL administrator:
 
-Windows PowerShell:
+```sql
+CREATE USER repolens_user WITH PASSWORD 'replace_with_a_strong_local_password';
+CREATE DATABASE repolens OWNER repolens_user;
+```
+
+Skip creation if your local user/database already exists; configure the existing values instead.
+
+## Backend setup
+
+Windows PowerShell, from the repository root:
 
 ```powershell
 cd backend
 py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\\.venv\\Scripts\\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 Copy-Item .env.example .env
+```
+
+Edit `backend/.env` and replace the placeholder in `DATABASE_URL` with your actual local connection URL. Keep this file private; `.gitignore` excludes it. URL-encode special characters in the database password.
+
+Apply and inspect the migration from the backend directory:
+
+```powershell
+alembic upgrade head
+alembic current
+```
+
+Start the API:
+
+```powershell
 uvicorn app.main:app --reload
 ```
 
-macOS/Linux:
+Endpoints:
+- API docs: http://127.0.0.1:8000/docs
+- Liveness: http://127.0.0.1:8000/api/v1/health/live
+- Readiness: http://127.0.0.1:8000/api/v1/health/ready
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
-```
+Liveness does not require a database. Readiness returns HTTP 503 if PostgreSQL is missing or unreachable, without returning connection details.
 
-Backend URLs: [API docs](http://127.0.0.1:8000/docs), [liveness](http://127.0.0.1:8000/api/v1/health/live), [readiness](http://127.0.0.1:8000/api/v1/health/ready).
+## Frontend setup
 
-### 2. Start the frontend
-
-Open a second terminal from the repository root:
+Open a second terminal at the repository root:
 
 ```powershell
 cd frontend
 npm install
 Copy-Item .env.example .env
+npm test
+npm run build
 npm run dev
 ```
 
-Open the local URL printed by Vite (normally http://localhost:5173). In macOS/Linux, use `cp .env.example .env` instead of `Copy-Item`.
+Open the URL printed by Vite (normally http://localhost:5173).
 
-## Run tests
+## Run backend tests
 
-Backend:
+With the backend virtual environment active:
 
 ```powershell
 cd backend
-.\.venv\Scripts\Activate.ps1
 pytest
 ```
 
-Frontend (from a separate terminal):
-
-```powershell
-cd frontend
-npm test
-```
-
-Use `npm run test:watch` while developing UI changes. The frontend suite covers GitHub URL normalization, dangerous/lookalike URL rejection, dashboard state, modal keyboard behavior, and explicit preview-mode messaging.
+Schema/model tests use in-memory SQLite. CI also renders the Alembic migration in PostgreSQL dialect without a database server; run `alembic upgrade head` locally to test actual PostgreSQL connectivity and apply the schema.
 
 ## Roadmap
 
-- [x] Phase 1A: baseline, FastAPI health endpoints, tests, responsive React JavaScript interface
-- [x] Phase 1B implementation: accessible URL validation and frontend test coverage (verify CI and review before advancing)
-- [ ] Phase 2: PostgreSQL schema, SQLAlchemy, Alembic migrations, data isolation
-- [ ] Phase 3: safe GitHub repository connection and browsing
-- [ ] Phase 4: source parsing, chunking, indexing jobs, and embeddings
-- [ ] Phase 5: hybrid retrieval using PostgreSQL full-text search and pgvector
-- [ ] Phase 6: grounded LLM chat with source citations
+- [x] Phase 1A: foundation and React JavaScript interface
+- [x] Phase 1B: URL validation, modal accessibility, frontend tests
+- [x] Phase 2A implementation: SQLAlchemy models, Alembic migration, session setup, DB readiness
+- [ ] Phase 2B: verify real PostgreSQL migration and harden operational setup
+- [ ] Phase 3: GitHub repository connection and browsing
+- [ ] Phase 4: code chunking, indexing jobs, and embeddings
+- [ ] Phase 5: hybrid retrieval with PostgreSQL full-text search and pgvector
+- [ ] Phase 6: grounded LLM chat and citations
 - [ ] Phase 7: complete product workflows and UI integration
-- [ ] Phase 8: security hardening, retrieval evaluation, CI, and deployment
+- [ ] Phase 8: security, evaluation, CI, and deployment
 
-## Security notes
+## Security
 
-Never commit `.env`, API keys, tokens, database passwords, private source, or user data. Repository URLs are only format-validated during Phase 1B: no GitHub content is fetched or stored. Downloaded repository files will be treated as untrusted input and never executed. Ask/repository controls are not presented as working integrations until their phases are implemented.
+Never commit `.env`, API keys, tokens, database passwords, private source, or user data. The URL form validates format only; it does not fetch repository files. Authentication is not implemented yet, so user IDs in the database are an ownership foundation and must not be treated as completed API authorization.
 
-See [Phase 1B instructions](docs/PHASE_1B.md) for scope and verification.
+See [Phase 2A instructions](docs/PHASE_2A.md).
