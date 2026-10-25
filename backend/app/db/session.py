@@ -58,6 +58,11 @@ def get_database_url() -> str:
             "RepoLens requires PostgreSQL using the psycopg 3 driver."
         )
 
+    if not url.database or not url.username:
+        raise DatabaseConfigurationError(
+            "DATABASE_URL must include a PostgreSQL database name and username."
+        )
+
     return url.render_as_string(hide_password=False)
 
 

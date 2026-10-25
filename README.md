@@ -2,14 +2,14 @@
 
 **GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed RAG answers.
 
-> Current milestone: Phase 2A — PostgreSQL persistence foundation, migrations, and database-aware readiness. GitHub ingestion, embeddings, vector retrieval, and LLM chat are later phases.
+> Current milestone: Phase 2B — database operational verification and migration/schema consistency hardening. GitHub ingestion, embeddings, vector retrieval, and LLM chat are later phases.
 
 ## Stack
 
 - Frontend: React, Vite, JavaScript/JSX, CSS — no TypeScript
 - Backend: Python 3.12+, FastAPI, SQLAlchemy 2, Alembic, psycopg 3
 - Database: PostgreSQL 16+
-- Planned vector retrieval: pgvector, introduced with the indexing/retrieval phases
+- Planned vector retrieval: pgvector, introduced with indexing/retrieval phases
 - Constraints: no Docker and no model training
 
 ## Prerequisites
@@ -47,7 +47,10 @@ Apply and inspect the migration from the backend directory:
 ```powershell
 alembic upgrade head
 alembic current
+python -m app.db.schema_check
 ```
+
+The schema-check command is read-only. It checks the applied Alembic revision, expected columns, constraints, and indexes without printing the database URL.
 
 Start the API:
 
@@ -86,14 +89,14 @@ cd backend
 pytest
 ```
 
-Schema/model tests use in-memory SQLite. CI also renders the Alembic migration in PostgreSQL dialect without a database server; run `alembic upgrade head` locally to test actual PostgreSQL connectivity and apply the schema.
+Schema and model tests use in-memory SQLite by default. CI starts a local PostgreSQL service without Docker, applies the actual Alembic migration, runs optional live-PostgreSQL checks, and verifies the resulting schema. For local live integration testing, set `REPOLENS_TEST_DATABASE_URL` to a dedicated test database **after** running `alembic upgrade head`. The integration test is read-only and never creates or deletes database objects.
 
 ## Roadmap
 
 - [x] Phase 1A: foundation and React JavaScript interface
 - [x] Phase 1B: URL validation, modal accessibility, frontend tests
-- [x] Phase 2A implementation: SQLAlchemy models, Alembic migration, session setup, DB readiness
-- [ ] Phase 2B: verify real PostgreSQL migration and harden operational setup
+- [x] Phase 2A: SQLAlchemy models, initial Alembic migration, database-aware readiness
+- [x] Phase 2B implementation: live PostgreSQL CI, schema verification, session cleanup and constraint tests (review and verify before advancing)
 - [ ] Phase 3: GitHub repository connection and browsing
 - [ ] Phase 4: code chunking, indexing jobs, and embeddings
 - [ ] Phase 5: hybrid retrieval with PostgreSQL full-text search and pgvector
@@ -103,6 +106,6 @@ Schema/model tests use in-memory SQLite. CI also renders the Alembic migration i
 
 ## Security
 
-Never commit `.env`, API keys, tokens, database passwords, private source, or user data. The URL form validates format only; it does not fetch repository files. Authentication is not implemented yet, so user IDs in the database are an ownership foundation and must not be treated as completed API authorization.
+Never commit `.env`, API keys, tokens, database passwords, private source, or user data. The repository URL form validates format only; it does not fetch repository files. Authentication is not implemented yet, so user IDs in the database are an ownership foundation and must not be treated as completed API authorization.
 
-See [Phase 2A instructions](docs/PHASE_2A.md).
+See [Phase 2A](docs/PHASE_2A.md) and [Phase 2B](docs/PHASE_2B.md).
