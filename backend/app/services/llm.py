@@ -20,13 +20,22 @@ class LLMProviderError(RuntimeError):
 
 def get_llm_configuration(settings: Settings | None = None) -> Settings:
     settings = settings or get_settings()
+    if (
+        settings.openrouter_api_key is not None
+        and settings.openrouter_api_key.get_secret_value().strip()
+    ):
+        settings = settings.model_copy(update={
+            "llm_api_key": settings.openrouter_api_key,
+            "llm_base_url": settings.openrouter_base_url,
+            "llm_model": settings.openrouter_chat_model,
+        })
     if not settings.llm_enabled:
         raise LLMConfigurationError(
             "RAG chat is disabled. Set LLM_ENABLED=true in backend/.env to enable it."
         )
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
         raise LLMConfigurationError(
-            "The chat provider is not configured. Set LLM_API_KEY in backend/.env."
+            "The chat provider is not configured. Set OPENROUTER_API_KEY or the legacy LLM_API_KEY in backend/.env."
         )
     if settings.llm_provider.strip().lower() != "openai_compatible":
         raise LLMConfigurationError(
@@ -55,29 +64,41 @@ async def complete_chat(
     transport: Any = None,
 ) -> str:
     """Send a bounded chat-completion request and return validated plain text."""
+    import asyncio
+
     config = get_llm_configuration(settings)
     client_settings = config
+    headers = {
+        "Authorization": "Bearer " + client_settings.llm_api_key.get_secret_value(),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if urlsplit(client_settings.llm_base_url).hostname == "openrouter.ai":
+        headers["HTTP-Referer"] = client_settings.openrouter_http_referer
+        headers["X-Title"] = client_settings.openrouter_app_title
     try:
         async with httpx.AsyncClient(
             base_url=client_settings.llm_base_url.rstrip("/") + "/",
-            headers={
-                "Authorization": "Bearer " + client_settings.llm_api_key.get_secret_value(),
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+            headers=headers,
             timeout=httpx.Timeout(client_settings.llm_timeout_seconds),
             transport=transport,
             follow_redirects=False,
         ) as client:
-            response = await client.post(
-                "chat/completions",
-                json={
-                    "model": client_settings.llm_model.strip(),
-                    "messages": messages,
-                    "temperature": 0.1,
-                    "max_tokens": client_settings.llm_max_completion_tokens,
-                },
-            )
+            for attempt in range(client_settings.llm_max_retries + 1):
+                response = await client.post(
+                    "chat/completions",
+                    json={
+                        "model": client_settings.llm_model.strip(),
+                        "messages": messages,
+                        "temperature": 0.1,
+                        "max_tokens": client_settings.llm_max_completion_tokens,
+                    },
+                )
+                transient = response.status_code == 429 or response.status_code in {502, 503, 504}
+                if not transient or attempt >= client_settings.llm_max_retries:
+                    break
+                # Small bounded backoff; never echo response bodies or credentials.
+                await asyncio.sleep(min(0.25 * (2 ** attempt), 1.0))
     except httpx.TimeoutException as exc:
         raise LLMProviderError("The chat provider timed out. Please retry your question.") from exc
     except httpx.RequestError as exc:
@@ -89,6 +110,8 @@ async def complete_chat(
         raise LLMProviderError("The chat provider rate limit was reached. Please retry later.")
     if response.status_code in {401, 403}:
         raise LLMProviderError("The chat provider rejected the configured credentials.")
+    if response.status_code == 402:
+        raise LLMProviderError("The chat provider requires account credits or a billing change.")
     if response.status_code >= 500:
         raise LLMProviderError("The chat provider is temporarily unavailable. Please retry later.")
     if not response.is_success:

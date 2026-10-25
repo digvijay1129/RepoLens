@@ -127,3 +127,31 @@ async def test_provider_returns_safe_errors_for_rate_limits_and_auth_failures() 
             with pytest.raises(EmbeddingProviderError, match=expected) as error:
                 await provider.embed_texts(["source text"])
         assert "internal provider response" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_embedding_settings_override_legacy_provider_and_add_headers() -> None:
+    settings = configured_settings(
+        openrouter_api_key=SecretStr("sk-or-embedding-test"),
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_embedding_model="openai/text-embedding-3-small",
+        openrouter_http_referer="http://localhost:5173",
+        openrouter_app_title="RepoLens Test",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "openrouter.ai"
+        assert request.url.path == "/api/v1/embeddings"
+        assert request.headers["Authorization"] == "Bearer sk-or-embedding-test"
+        assert request.headers["HTTP-Referer"] == "http://localhost:5173"
+        assert request.headers["X-Title"] == "RepoLens Test"
+        body = __import__("json").loads(request.content)
+        assert body["model"] == "openai/text-embedding-3-small"
+        assert body["dimensions"] == 3
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.5, 0.25, 0.75]}]}, request=request)
+
+    provider = OpenAICompatibleEmbeddingProvider(settings, transport=httpx.MockTransport(handler))
+    async with provider:
+        vectors = await provider.embed_texts(["a source code chunk"])
+    assert vectors == [[0.5, 0.25, 0.75]]
+    assert provider.model_name == "openai/text-embedding-3-small"

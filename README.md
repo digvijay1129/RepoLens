@@ -100,8 +100,39 @@ Open the local URL printed by Vite (normally http://localhost:5173).
 6. Click **Index source files** to queue an indexing job. The workspace shows progress, skipped files, chunk count, and the commit snapshot when indexing finishes.
 7. To generate embeddings, set `EMBEDDINGS_ENABLED=true` and configure the backend-only provider values in `backend/.env`, then select **Generate embeddings** in Code Explorer. Embeddings are opt-in and are not required for source indexing.
 8. Use **Search this codebase** to search your current indexed commit with keyword, semantic, or hybrid retrieval. Results include GitHub links to exact source line ranges.
+9. Configure the optional LLM provider in `backend/.env` and use **Ask RepoLens** for grounded answers with file/line citations.
 
-Repository metadata, branch preference and completed source chunks persist across sessions and are scoped to the signed-in user's ID. Indexing reads only bounded, allowlisted UTF-8 text files from public repositories, records file paths and line ranges, and never executes source code. Embeddings and semantic retrieval are planned for Phase 4B/5.
+Repository metadata, branch preference, source chunks, embeddings, and saved conversations persist across sessions and are scoped to the signed-in user's ID. Indexing reads only bounded, allowlisted UTF-8 text files from public repositories, records file paths and line ranges, and never executes source code.
+
+## OpenRouter configuration
+
+RepoLens can use one OpenRouter API key for chat and optional embeddings. Add these values to \`backend/.env\`:
+
+\`\`\`dotenv
+OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_CHAT_MODEL=openai/gpt-5.6-luna
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+OPENROUTER_HTTP_REFERER=http://localhost:5173
+OPENROUTER_APP_TITLE=RepoLens
+
+LLM_ENABLED=true
+LLM_MAX_RETRIES=2
+EMBEDDINGS_ENABLED=true
+EMBEDDINGS_DIMENSIONS=1536
+\`\`\`
+
+Embedding generation is optional for keyword-based RAG. Set \`EMBEDDINGS_ENABLED=true\` when you want to generate vectors and use semantic/hybrid retrieval. The OpenRouter key is backend-only; never commit \`backend/.env\` or place this key in frontend settings. Set \`OPENROUTER_HTTP_REFERER\` to your deployed app origin when hosting the project. Provider calls may incur cost, and retrieved repository excerpts are sent to the configured model provider.
+
+## Offline retrieval evaluation
+
+From the \`backend/\` folder, run the illustrative JSONL sample through the evaluation harness:
+
+\`\`\`powershell
+python -m app.evaluation.evaluate --input evaluation/examples/openrouter_rag_run.jsonl --k 5 --output evaluation/report.json
+\`\`\`
+
+The report includes Recall@k, MRR, nDCG@k, citation validity, support precision and coverage. The included data is synthetic and illustrates the schema only; use representative queries and human-reviewed relevance/citation labels to judge real retrieval quality.
 
 ## API endpoints
 
@@ -166,7 +197,7 @@ GitHub Actions starts a local PostgreSQL service without Docker, applies the Ale
 - [x] Phase 4B: configurable embeddings, versioned vector storage and embedding jobs
 - [x] Phase 5 implementation: pgvector semantic retrieval, PostgreSQL full-text search, hybrid ranking and citations (verify before continuing)
 - [x] Phase 6 implementation: grounded RAG chat, persistent conversations, and validated source citations (verify before continuing)
-- [ ] Phase 7: full workflow polish, evaluation and performance
+- [x] Phase 7 implementation: OpenRouter chat/embedding integration, bounded retries, copy-answer UX, and offline retrieval/citation evaluation (verify before continuing)
 - [ ] Phase 8: deployment, security review and final ZIP packaging
 
-See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), [Phase 5 notes](docs/PHASE_5.md), and [Phase 6 notes](docs/PHASE_6.md) for implementation details and validation boundaries.
+See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), [Phase 5 notes](docs/PHASE_5.md), [Phase 6 notes](docs/PHASE_6.md), and [Phase 7 notes](docs/PHASE_7.md) for implementation details and validation boundaries.
