@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "phase-1/**"
+      - "phase-1b/**"
   pull_request:
     branches:
       - main
@@ -31,8 +32,8 @@ jobs:
         working-directory: backend
         run: python -m pytest
 
-  frontend-build:
-    name: Frontend production build
+  frontend-quality:
+    name: Frontend tests and production build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -40,10 +41,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.12"
       - name: Install dependencies
         working-directory: frontend
         run: npm install
-      - name: Build frontend
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm test
+      - name: Build frontend for production
         working-directory: frontend
         run: npm run build

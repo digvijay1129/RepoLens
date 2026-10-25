@@ -1,10 +1,10 @@
 # RepoLens
 
-**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed RAG answers.
+**GitHub Codebase Intelligence Assistant** — a developer workspace for exploring repositories and asking code questions with evidence-backed answers using retrieval-augmented generation (RAG).
 
-> Current milestone: Phase 1A — foundation and interface shell. Repository ingestion, PostgreSQL/pgvector, embeddings, and LLM chat come in later verified phases.
+> Current milestone: Phase 1B — foundation hardening, accessible repository URL validation, and frontend test coverage. GitHub ingestion, PostgreSQL/pgvector, embeddings, and LLM chat are added in later verified phases.
 
-## Stack
+## Technology stack
 
 - **Frontend:** React, Vite, JavaScript (JSX), CSS — no TypeScript
 - **Backend:** Python 3.12+, FastAPI, Pydantic Settings
@@ -12,19 +12,20 @@
 - **Planned integrations:** GitHub REST API, embedding API, LLM API
 - **Constraints:** no Docker and no model training
 
-## Layout
+## Repository layout
 
-- `backend/` — FastAPI application and automated tests
-- `frontend/` — React application using JavaScript and Vite
-- `docs/PHASE_1.md` — setup, scope, and verification checklist
+- `backend/` — FastAPI application and backend tests
+- `frontend/` — React app, URL validation helper, and frontend tests
+- `docs/PHASE_1.md` — original foundation scope
+- `docs/PHASE_1B.md` — current improvements and verification steps
 
 ## Prerequisites
 
-Install Python 3.12+, Node.js 20+ with npm, Git, and (recommended) VS Code. PostgreSQL is not required until Phase 2.
+Install Python 3.12+, Node.js 22.12+ with npm, and Git. VS Code is recommended. PostgreSQL is not required until Phase 2.
 
 ## Run locally
 
-### Backend
+### 1. Start the backend
 
 Windows PowerShell:
 
@@ -52,22 +53,22 @@ uvicorn app.main:app --reload
 
 Backend URLs: [API docs](http://127.0.0.1:8000/docs), [liveness](http://127.0.0.1:8000/api/v1/health/live), [readiness](http://127.0.0.1:8000/api/v1/health/ready).
 
-### Frontend
+### 2. Start the frontend
 
-In a second terminal, from the repository root:
+Open a second terminal from the repository root:
 
-```bash
+```powershell
 cd frontend
 npm install
-cp .env.example .env
+Copy-Item .env.example .env
 npm run dev
 ```
 
-On Windows use `Copy-Item .env.example .env` instead of `cp`. Open the local URL printed by Vite (normally http://localhost:5173).
+Open the local URL printed by Vite (normally http://localhost:5173). In macOS/Linux, use `cp .env.example .env` instead of `Copy-Item`.
 
-## Tests
+## Run tests
 
-From the repository root:
+Backend:
 
 ```powershell
 cd backend
@@ -75,22 +76,29 @@ cd backend
 pytest
 ```
 
-On macOS/Linux activate with `source .venv/bin/activate`.
+Frontend (from a separate terminal):
+
+```powershell
+cd frontend
+npm test
+```
+
+Use `npm run test:watch` while developing UI changes. The frontend suite covers GitHub URL normalization, dangerous/lookalike URL rejection, dashboard state, modal keyboard behavior, and explicit preview-mode messaging.
 
 ## Roadmap
 
 - [x] Phase 1A: baseline, FastAPI health endpoints, tests, responsive React JavaScript interface
-- [ ] Phase 1B: refine and verify foundation based on Phase 1A feedback
+- [x] Phase 1B implementation: accessible URL validation and frontend test coverage (verify CI and review before advancing)
 - [ ] Phase 2: PostgreSQL schema, SQLAlchemy, Alembic migrations, data isolation
 - [ ] Phase 3: safe GitHub repository connection and browsing
 - [ ] Phase 4: source parsing, chunking, indexing jobs, and embeddings
-- [ ] Phase 5: hybrid retrieval with PostgreSQL full-text search and pgvector
+- [ ] Phase 5: hybrid retrieval using PostgreSQL full-text search and pgvector
 - [ ] Phase 6: grounded LLM chat with source citations
 - [ ] Phase 7: complete product workflows and UI integration
-- [ ] Phase 8: security hardening, evaluation, CI, and deployment
+- [ ] Phase 8: security hardening, retrieval evaluation, CI, and deployment
 
-## Security
+## Security notes
 
-Never commit `.env`, API keys, tokens, database passwords, private source, or user data. Downloaded repository files must be treated as untrusted input and never executed. Connect/chat controls in Phase 1A are previews: no repository is fetched, no prompt is stored, and no LLM is called yet.
+Never commit `.env`, API keys, tokens, database passwords, private source, or user data. Repository URLs are only format-validated during Phase 1B: no GitHub content is fetched or stored. Downloaded repository files will be treated as untrusted input and never executed. Ask/repository controls are not presented as working integrations until their phases are implemented.
 
-See [Phase 1 instructions](docs/PHASE_1.md) for setup and verification.
+See [Phase 1B instructions](docs/PHASE_1B.md) for scope and verification.

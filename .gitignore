@@ -23,6 +23,10 @@ build/
 node_modules/
 frontend/dist/
 frontend/.vite/
+.vitest/
+frontend/.vitest/
+coverage/
+.nyc_output/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
