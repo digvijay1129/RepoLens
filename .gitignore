@@ -38,3 +38,8 @@ pnpm-debug.log*
 Thumbs.db
 *.log
 *.sqlite3
+
+# Generated offline evaluation reports and release packages
+backend/evaluation/report*.json
+*.zip
+*.tar.gz
