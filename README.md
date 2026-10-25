@@ -122,6 +122,8 @@ Repository metadata, branch preference and completed source chunks persist acros
 - `GET /api/v1/repositories/saved/{repository_id}/jobs/{job_id}` — read owner-scoped indexing/embedding progress
 - `POST /api/v1/repositories/saved/{repository_id}/embeddings` — queue configured embedding generation for the current indexed snapshot
 - `POST /api/v1/repositories/saved/{repository_id}/search` — search the current indexed snapshot with keyword, semantic or hybrid retrieval
+- `POST /api/v1/repositories/saved/{repository_id}/chat` — ask a grounded RAG question and persist the reply with citations
+- `GET /api/v1/repositories/saved/{repository_id}/conversations` and `GET /api/v1/repositories/saved/{repository_id}/conversations/{conversation_id}` — list/read saved chats
 - `POST /api/v1/repositories/inspect` — public metadata preview
 - `GET /api/v1/repositories/{owner}/{repository}/contents` — public directory listing with optional `path` and `ref`
 
@@ -163,9 +165,8 @@ GitHub Actions starts a local PostgreSQL service without Docker, applies the Ale
 - [x] Phase 4A implementation: bounded source fetching, safe file filtering, chunking, persistent indexing jobs and snapshot management (verify before continuing)
 - [x] Phase 4B: configurable embeddings, versioned vector storage and embedding jobs
 - [x] Phase 5 implementation: pgvector semantic retrieval, PostgreSQL full-text search, hybrid ranking and citations (verify before continuing)
-- [ ] Phase 5: hybrid retrieval using PostgreSQL full-text search and pgvector
-- [ ] Phase 6: grounded LLM chat and source citations
+- [x] Phase 6 implementation: grounded RAG chat, persistent conversations, and validated source citations (verify before continuing)
 - [ ] Phase 7: full workflow polish, evaluation and performance
 - [ ] Phase 8: deployment, security review and final ZIP packaging
 
-See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), and [Phase 5 notes](docs/PHASE_5.md) for implementation details and validation boundaries.
+See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), [Phase 4B notes](docs/PHASE_4B.md), [Phase 5 notes](docs/PHASE_5.md), and [Phase 6 notes](docs/PHASE_6.md) for implementation details and validation boundaries.

@@ -468,3 +468,90 @@ def test_source_search_endpoint_returns_line_citations_and_is_owner_scoped(
         json={"query": "authenticate_user", "mode": "keyword", "limit": 5},
     )
     assert forbidden.status_code == 404
+
+
+def test_repository_chat_endpoint_returns_citations_and_checks_repository_ownership(
+    api_client: TestClient,
+    monkeypatch,
+) -> None:
+    owner = create_account(api_client, "rag-owner@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner['access_token']}"}
+    saved = api_client.post(
+        "/api/v1/repositories/saved",
+        headers=owner_headers,
+        json={"repository_url": "https://github.com/Digvijay1129/RepoLens"},
+    )
+    assert saved.status_code == 201, saved.text
+    repository_id = UUID(saved.json()["id"])
+    conversation_id = UUID("00000000-0000-0000-0000-000000000081")
+    user_message_id = UUID("00000000-0000-0000-0000-000000000082")
+    assistant_message_id = UUID("00000000-0000-0000-0000-000000000083")
+    commit_sha = "c" * 40
+    now = datetime(2026, 10, 25, tzinfo=timezone.utc)
+    source = {
+        "id": "S1",
+        "file_path": "backend/app/auth.py",
+        "language": "python",
+        "start_line": 12,
+        "end_line": 28,
+        "symbol_names": ["authenticate_user"],
+        "score": 0.95,
+        "match_types": ["keyword"],
+        "commit_sha": commit_sha,
+        "citation_url": f"https://github.com/Digvijay1129/RepoLens/blob/{commit_sha}/backend/app/auth.py#L12-L28",
+    }
+
+    async def fake_chat(db, repository, user_id, message, *, conversation_id=None):
+        assert repository.id == repository_id
+        assert repository.user_id == user_id
+        assert message == "How is auth validated?"
+        return {
+            "id": conversation_id or UUID("00000000-0000-0000-0000-000000000081"),
+            "repository_id": repository.id,
+            "title": "How is auth validated?",
+            "created_at": now,
+            "updated_at": now,
+            "answer": "The authentication helper validates the token [S1].",
+            "retrieval_mode": "keyword",
+            "commit_sha": commit_sha,
+            "sources": [source],
+            "user_message": {
+                "id": user_message_id,
+                "conversation_id": conversation_id or UUID("00000000-0000-0000-0000-000000000081"),
+                "role": "user",
+                "content": message,
+                "sources": [],
+                "created_at": now,
+            },
+            "assistant_message": {
+                "id": assistant_message_id,
+                "conversation_id": conversation_id or UUID("00000000-0000-0000-0000-000000000081"),
+                "role": "assistant",
+                "content": "The authentication helper validates the token [S1].",
+                "sources": [source],
+                "created_at": now,
+            },
+        }
+
+    monkeypatch.setattr(repository_routes, "run_repository_chat", fake_chat)
+    response = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/chat",
+        headers=owner_headers,
+        json={"message": "How is auth validated?"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["answer"].endswith("[S1].")
+    assert body["sources"][0]["file_path"] == "backend/app/auth.py"
+    assert body["sources"][0]["citation_url"].endswith("#L12-L28")
+    assert body["user_message"]["role"] == "user"
+    assert body["assistant_message"]["role"] == "assistant"
+
+    another = create_account(api_client, "rag-other@example.com")
+    other_headers = {"Authorization": f"Bearer {another['access_token']}"}
+    denied = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/chat",
+        headers=other_headers,
+        json={"message": "How is auth validated?"},
+    )
+    assert denied.status_code == 404

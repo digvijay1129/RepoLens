@@ -103,6 +103,13 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "vector",
         "created_at",
     },
+    "chat_conversations": {
+        "id", "repository_id", "user_id", "title", "created_at", "updated_at",
+    },
+    "chat_messages": {
+        "id", "conversation_id", "repository_id", "user_id", "role",
+        "content", "sources", "created_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -176,6 +183,26 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "fk_repository_chunk_embeddings_repository_owner",
         },
         "indexes": {"ix_chunk_embeddings_user_repo_commit_model"},
+    },
+    "chat_conversations": {
+        "primary": {"pk_chat_conversations"},
+        "unique": {"uq_chat_conversations_id_repo_user"},
+        "check": {"ck_chat_conversations_title_length_valid"},
+        "foreign": {"fk_chat_conversations_repository_owner"},
+        "indexes": {"ix_chat_conversations_user_repository_updated"},
+    },
+    "chat_messages": {
+        "primary": {"pk_chat_messages"},
+        "unique": set(),
+        "check": {
+            "ck_chat_messages_role_allowed",
+            "ck_chat_messages_content_length_valid",
+        },
+        "foreign": {"fk_chat_messages_conversation_owner"},
+        "indexes": {
+            "ix_chat_messages_conversation_created",
+            "ix_chat_messages_user_repository_created",
+        },
     },
 }
 
