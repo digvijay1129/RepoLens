@@ -84,4 +84,4 @@ The new migration is `20261025_0004`, following Phase 3B's `20261025_0003`. Upgr
 - Private GitHub repository OAuth/token access
 - A distributed queue/retry worker system; current background tasks execute in the API process
 
-Phase 4B will add embedding generation behind a provider interface after source indexing is reviewed and verified.
+Phase 4B adds configurable embedding generation behind a provider interface. See [PHASE_4B.md](PHASE_4B.md).

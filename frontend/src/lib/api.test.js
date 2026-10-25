@@ -12,6 +12,7 @@ import {
   saveRepository,
   selectRepositoryBranch,
   startRepositoryIndex,
+  startRepositoryEmbeddings,
   setAccessToken,
 } from "./api.js";
 
@@ -153,4 +154,30 @@ describe("RepoLens API client", () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/index$/);
     expect(fetchMock.mock.calls[0][1].method).toBe("POST");
     expect(fetchMock.mock.calls[1][0]).toMatch(/\/repositories\/saved\/repo-1\/jobs\/job-1$/);
+  });
+
+
+
+  it("starts owner-scoped embedding generation for a saved repository", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        id: "embedding-job",
+        job_type: "embedding",
+        status: "queued",
+        embedding_provider: "openai_compatible",
+        embedding_model: "text-embedding-3-small",
+        embedding_dimensions: 1536,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+
+    const job = await startRepositoryEmbeddings("repo-1");
+
+    expect(job.job_type).toBe("embedding");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/embeddings$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer signed-token");
   });

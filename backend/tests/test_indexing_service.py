@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
 from app.models.repository_chunk import RepositoryChunk
+from app.models.repository_chunk_embedding import RepositoryChunkEmbedding
 from app.models.user import User
 from app.services.github_client import GitHubClientError
 from app.services.indexing import run_indexing_job
@@ -242,3 +243,213 @@ async def test_failed_reindex_preserves_the_previous_completed_snapshot(indexing
     assert repository.indexed_commit_sha == OLD_COMMIT_SHA
     assert len(chunks) == 1
     assert chunks[0].commit_sha == OLD_COMMIT_SHA
+
+
+
+class FakeEmbeddingProvider:
+    provider_name = "openai_compatible"
+    model_name = "test-embedding-model"
+    dimensions = 3
+
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        if self.fail:
+            from app.services.embeddings import EmbeddingProviderError
+            raise EmbeddingProviderError("The embedding provider rate limit was reached. Retry later.")
+        return [[float(index + 1), 0.25, -0.5] for index, _ in enumerate(texts)]
+
+
+def create_ready_embedding_job(factory, ids, *, provider="openai_compatible", model="test-embedding-model", dimensions=3):
+    with factory() as db:
+        repository = db.get(Repository, ids["repository_id"])
+        repository.indexed_commit_sha = COMMIT_SHA
+        repository.indexing_status = "indexed"
+        chunk = RepositoryChunk(
+            repository_id=repository.id,
+            user_id=repository.user_id,
+            commit_sha=COMMIT_SHA,
+            file_path="src/main.py",
+            language="python",
+            chunk_index=0,
+            start_line=1,
+            end_line=2,
+            content_hash="a" * 64,
+            symbol_names="greet",
+            token_count=7,
+            chunk_text="def greet(name): return name",
+        )
+        db.add(chunk)
+        job = IndexingJob(
+            repository_id=repository.id,
+            user_id=repository.user_id,
+            job_type="embedding",
+            embedding_provider=provider,
+            embedding_model=model,
+            embedding_dimensions=dimensions,
+            status="queued",
+            commit_sha=COMMIT_SHA,
+            progress_message="Queued embeddings.",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        ids["embedding_job_id"] = job.id
+        ids["chunk_id"] = chunk.id
+    return ids
+
+
+@pytest.mark.asyncio
+async def test_embedding_worker_persists_vector_metadata_and_is_idempotent(indexing_context, monkeypatch) -> None:
+    from pydantic import SecretStr
+    from app.core.config import Settings
+    from app.services import embeddings as embedding_service
+
+    factory, _engine, ids = indexing_context
+    create_ready_embedding_job(factory, ids)
+    settings = Settings(
+        environment="test",
+        embeddings_enabled=True,
+        embeddings_provider="openai_compatible",
+        embeddings_api_key=SecretStr("test-key"),
+        embeddings_base_url="https://embedding.example.test/v1",
+        embeddings_model="test-embedding-model",
+        embeddings_dimensions=3,
+        embeddings_batch_size=2,
+    )
+    monkeypatch.setattr(embedding_service, "get_embedding_configuration", lambda: settings)
+    fake_provider = FakeEmbeddingProvider()
+
+    await run_embedding_job(
+        ids["embedding_job_id"],
+        session_factory=factory,
+        embedding_provider_factory=lambda: fake_provider,
+    )
+
+    with factory() as db:
+        job = db.get(IndexingJob, ids["embedding_job_id"])
+        repository = db.get(Repository, ids["repository_id"])
+        vector_rows = db.scalars(
+            select(RepositoryChunkEmbedding).where(
+                RepositoryChunkEmbedding.repository_id == ids["repository_id"]
+            )
+        ).all()
+    assert job.status == "completed"
+    assert job.job_type == "embedding"
+    assert job.processed_files == 1
+    assert job.embedding_model == "test-embedding-model"
+    assert repository.embedding_status == "embedded"
+    assert repository.embedding_provider == "openai_compatible"
+    assert repository.embedding_model == "test-embedding-model"
+    assert repository.embedding_dimensions == 3
+    assert repository.last_embedded_at is not None
+    assert len(vector_rows) == 1
+    assert vector_rows[0].vector == [1.0, 0.25, -0.5]
+    assert vector_rows[0].dimensions == 3
+    assert vector_rows[0].content_hash == "a" * 64
+
+    second_job_id = create_ready_embedding_job_and_get_second(factory, ids)
+    second_provider = FakeEmbeddingProvider()
+    await run_embedding_job(
+        second_job_id,
+        session_factory=factory,
+        embedding_provider_factory=lambda: second_provider,
+    )
+    with factory() as db:
+        second_job = db.get(IndexingJob, second_job_id)
+        count = db.scalar(
+            select(__import__("sqlalchemy").func.count())
+            .select_from(RepositoryChunkEmbedding)
+            .where(RepositoryChunkEmbedding.repository_id == ids["repository_id"])
+        )
+    assert second_job.status == "completed"
+    assert "already up to date" in second_job.progress_message
+    assert second_provider.calls == []
+    assert count == 1
+
+
+def create_ready_embedding_job_and_get_second(factory, ids):
+    with factory() as db:
+        job = IndexingJob(
+            repository_id=ids["repository_id"],
+            user_id=ids["user_id"],
+            job_type="embedding",
+            status="queued",
+            progress_message="Queued retry.",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job.id
+
+
+@pytest.mark.asyncio
+async def test_failed_embedding_attempt_preserves_the_active_embedding_configuration(indexing_context, monkeypatch) -> None:
+    from pydantic import SecretStr
+    from app.core.config import Settings
+    from app.services import embeddings as embedding_service
+
+    factory, _engine, ids = indexing_context
+    create_ready_embedding_job(factory, ids)
+    settings = Settings(
+        environment="test",
+        embeddings_enabled=True,
+        embeddings_provider="openai_compatible",
+        embeddings_api_key=SecretStr("test-key"),
+        embeddings_base_url="https://embedding.example.test/v1",
+        embeddings_model="test-embedding-model",
+        embeddings_dimensions=3,
+        embeddings_batch_size=2,
+    )
+    monkeypatch.setattr(embedding_service, "get_embedding_configuration", lambda: settings)
+    with factory() as db:
+        repository = db.get(Repository, ids["repository_id"])
+        repository.embedding_status = "embedded"
+        repository.embedding_provider = "openai_compatible"
+        repository.embedding_model = "previous-model"
+        repository.embedding_dimensions = 3
+        db.add(RepositoryChunkEmbedding(
+            chunk_id=ids["chunk_id"],
+            repository_id=repository.id,
+            user_id=repository.user_id,
+            commit_sha=COMMIT_SHA,
+            provider="openai_compatible",
+            model="previous-model",
+            dimensions=3,
+            content_hash="a" * 64,
+            vector=[0.1, 0.2, 0.3],
+        ))
+        db.commit()
+
+    failing_provider = FakeEmbeddingProvider(fail=True)
+    await run_embedding_job(
+        ids["embedding_job_id"],
+        session_factory=factory,
+        embedding_provider_factory=lambda: failing_provider,
+    )
+
+    with factory() as db:
+        job = db.get(IndexingJob, ids["embedding_job_id"])
+        repository = db.get(Repository, ids["repository_id"])
+        old_rows = db.scalars(
+            select(RepositoryChunkEmbedding).where(
+                RepositoryChunkEmbedding.repository_id == ids["repository_id"],
+                RepositoryChunkEmbedding.model == "previous-model",
+            )
+        ).all()
+
+    assert job.status == "failed"
+    assert "rate limit" in job.error_message.lower()
+    assert repository.embedding_status == "embedded"
+    assert repository.embedding_model == "previous-model"
+    assert len(old_rows) == 1
+    assert old_rows[0].vector == [0.1, 0.2, 0.3]

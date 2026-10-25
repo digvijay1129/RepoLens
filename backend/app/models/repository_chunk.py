@@ -72,6 +72,12 @@ class RepositoryChunk(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    embeddings: Mapped[list["RepositoryChunkEmbedding"]] = relationship(
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     repository: Mapped["Repository"] = relationship(
         back_populates="chunks",
         foreign_keys="[RepositoryChunk.repository_id, RepositoryChunk.user_id]",

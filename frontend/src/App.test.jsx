@@ -17,6 +17,7 @@ import {
   saveRepository,
   selectRepositoryBranch,
   startRepositoryIndex,
+  startRepositoryEmbeddings,
   setAccessToken,
   deleteSavedRepository,
 } from "./lib/api.js";
@@ -36,6 +37,7 @@ vi.mock("./lib/api.js", () => ({
   saveRepository: vi.fn(),
   selectRepositoryBranch: vi.fn(),
   startRepositoryIndex: vi.fn(),
+  startRepositoryEmbeddings: vi.fn(),
   deleteSavedRepository: vi.fn(),
 }));
 
@@ -66,6 +68,10 @@ const repository = {
   license_name: "MIT License",
   archived: false,
   indexing_status: "pending",
+  embedding_status: "pending",
+  embedding_provider: null,
+  embedding_model: null,
+  embedding_dimensions: null,
   github_updated_at: "2026-10-25T00:00:00Z",
   created_at: "2026-10-25T00:00:00Z",
   updated_at: "2026-10-25T00:00:00Z",
@@ -122,6 +128,10 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     getRepositoryIndexingJob.mockResolvedValue({
       id: "job-123",
       repository_id: repository.id,
+      job_type: "source_indexing",
+      embedding_provider: null,
+      embedding_model: null,
+      embedding_dimensions: null,
       status: "completed",
       attempt_count: 1,
       total_files: 1,
@@ -139,6 +149,10 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     startRepositoryIndex.mockResolvedValue({
       id: "job-123",
       repository_id: repository.id,
+      job_type: "source_indexing",
+      embedding_provider: null,
+      embedding_model: null,
+      embedding_dimensions: null,
       status: "completed",
       attempt_count: 1,
       total_files: 1,
@@ -161,6 +175,27 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     deleteSavedRepository.mockResolvedValue(null);
     loginAccount.mockResolvedValue({ access_token: "login-token", user: userProfile });
     registerAccount.mockResolvedValue({ access_token: "register-token", user: userProfile });
+    startRepositoryEmbeddings.mockResolvedValue({
+      id: "embedding-job-1",
+      repository_id: repository.id,
+      job_type: "embedding",
+      embedding_provider: "openai_compatible",
+      embedding_model: "test-embedding-model",
+      embedding_dimensions: 3,
+      status: "completed",
+      attempt_count: 1,
+      total_files: 1,
+      processed_files: 1,
+      skipped_files: 0,
+      chunk_count: 1,
+      commit_sha: "a".repeat(40),
+      progress_message: "Generated 1 embeddings with openai_compatible/test-embedding-model.",
+      error_message: null,
+      started_at: "2026-10-25T00:00:00Z",
+      finished_at: "2026-10-25T00:00:05Z",
+      created_at: "2026-10-25T00:00:00Z",
+      updated_at: "2026-10-25T00:00:05Z",
+    });
   });
 
   afterEach(() => {
@@ -367,6 +402,30 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(screen.getByText(/repository retrieval and AI chat will be connected in Phase 6/i)).toBeInTheDocument();
   });
 
+
+  it("generates embeddings for an indexed repository and shows the active model", async () => {
+    const user = userEvent.setup();
+    const indexedRepository = {
+      ...repository,
+      indexing_status: "indexed",
+      embedding_status: "pending",
+      indexed_commit_sha: "a".repeat(40),
+    };
+    getSavedRepositories.mockResolvedValueOnce([indexedRepository]);
+    render(<App />);
+    await screen.findByText("Recent repositories");
+    await user.click(screen.getByRole("button", { name: /^code explorer/i }));
+    await screen.findByRole("heading", { name: "Code explorer" });
+
+    const embeddingButton = screen.getByRole("button", { name: /generate embeddings/i });
+    expect(embeddingButton).toBeEnabled();
+    await user.click(embeddingButton);
+
+    expect(startRepositoryEmbeddings).toHaveBeenCalledWith(indexedRepository.id);
+    expect(await screen.findByText("Generated 1 embeddings with openai_compatible/test-embedding-model.")).toBeInTheDocument();
+    expect(screen.getAllByText(/test-embedding-model/).length).toBeGreaterThan(0);
+  });
+
   it("starts source indexing and shows the completed chunk snapshot", async () => {
     const user = userEvent.setup();
     getSavedRepositories.mockResolvedValueOnce([repository]);
@@ -375,7 +434,7 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     await user.click(screen.getByRole("button", { name: /^code explorer/i }));
     await screen.findByRole("heading", { name: "Code explorer" });
 
-    expect(screen.getByRole("heading", { name: "Source indexing" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Source & embedding pipeline" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /index source files/i }));
 
     expect(startRepositoryIndex).toHaveBeenCalledWith(repository.id);

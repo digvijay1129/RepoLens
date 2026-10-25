@@ -17,6 +17,7 @@ from app.main import app
 from app.api.routes import repositories as repository_routes
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
+from app.models.repository_chunk_embedding import RepositoryChunkEmbedding
 from app.models.user import User
 from app.services import auth as auth_service
 from app.services.github_client import get_github_client
@@ -93,6 +94,7 @@ def api_client(monkeypatch):
     )
 
     with TestClient(app) as client:
+        app.state.test_engine = engine
         yield client
 
     app.dependency_overrides.clear()
@@ -301,3 +303,96 @@ def test_indexing_job_api_is_authenticated_idempotent_and_owner_scoped(
     assert api_client.post(
         f"/api/v1/repositories/saved/{repository_id}/index",
     ).status_code == 401
+
+
+
+def test_embedding_generation_requires_explicit_provider_configuration(api_client: TestClient) -> None:
+    account = create_account(api_client, "embeddings-config@example.com")
+    headers = {"Authorization": f"Bearer {account['access_token']}"}
+    saved_response = api_client.post(
+        "/api/v1/repositories/saved",
+        headers=headers,
+        json={"repository_url": "https://github.com/Digvijay1129/RepoLens"},
+    )
+    assert saved_response.status_code == 201, saved_response.text
+    repository_id = saved_response.json()["id"]
+
+    response = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/embeddings",
+        headers=headers,
+    )
+    assert response.status_code == 503
+    assert "EMBEDDINGS_ENABLED=true" in response.json()["detail"]
+    assert "API_KEY" not in response.json()["detail"]
+
+
+
+def test_embedding_job_is_queued_idempotently_and_scoped_to_repository_owner(
+    api_client: TestClient,
+    monkeypatch,
+) -> None:
+    from app.core.config import Settings
+    from pydantic import SecretStr
+
+    settings = Settings(
+        environment="test",
+        embeddings_enabled=True,
+        embeddings_provider="openai_compatible",
+        embeddings_api_key=SecretStr("test-api-key"),
+        embeddings_base_url="https://embedding.example.test/v1",
+        embeddings_model="test-embedding-model",
+        embeddings_dimensions=3,
+        embeddings_batch_size=4,
+    )
+    monkeypatch.setattr(
+        repository_routes,
+        "get_embedding_configuration",
+        lambda: settings,
+    )
+
+    async def no_op_worker(job_id) -> None:
+        return None
+
+    monkeypatch.setattr(repository_routes, "run_embedding_job", no_op_worker)
+    first_account = create_account(api_client, "embedding-owner@example.com")
+    first_headers = {"Authorization": f"Bearer {first_account['access_token']}"}
+    saved_response = api_client.post(
+        "/api/v1/repositories/saved",
+        headers=first_headers,
+        json={"repository_url": "https://github.com/Digvijay1129/RepoLens"},
+    )
+    assert saved_response.status_code == 201, saved_response.text
+    repository_id = UUID(saved_response.json()["id"])
+
+    with Session(api_client.app.state.test_engine) as db:
+        repository = db.get(Repository, repository_id)
+        repository.indexing_status = "indexed"
+        repository.indexed_commit_sha = "a" * 40
+        db.commit()
+
+    response = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/embeddings",
+        headers=first_headers,
+    )
+    assert response.status_code == 202, response.text
+    job = response.json()
+    assert job["job_type"] == "embedding"
+    assert job["status"] == "queued"
+    assert job["embedding_provider"] == "openai_compatible"
+    assert job["embedding_model"] == "test-embedding-model"
+    assert job["embedding_dimensions"] == 3
+
+    duplicate = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/embeddings",
+        headers=first_headers,
+    )
+    assert duplicate.status_code == 202
+    assert duplicate.json()["id"] == job["id"]
+
+    second_account = create_account(api_client, "embedding-other@example.com")
+    second_headers = {"Authorization": f"Bearer {second_account['access_token']}"}
+    forbidden = api_client.post(
+        f"/api/v1/repositories/saved/{repository_id}/embeddings",
+        headers=second_headers,
+    )
+    assert forbidden.status_code == 404

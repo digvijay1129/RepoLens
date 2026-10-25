@@ -30,7 +30,7 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
 
-    assert set(inspector.get_table_names()) == {"users", "repositories", "indexing_jobs", "repository_chunks"}
+    assert set(inspector.get_table_names()) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings"}
     assert "uq_repositories_user_full_name" in {
         constraint["name"] for constraint in inspector.get_unique_constraints("repositories")
     }
@@ -41,6 +41,9 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     assert {index["name"] for index in inspector.get_indexes("repository_chunks")} == {
         "ix_repository_chunks_user_repo_commit",
         "ix_repository_chunks_user_repo_path",
+    }
+    assert {index["name"] for index in inspector.get_indexes("repository_chunk_embeddings")} == {
+        "ix_chunk_embeddings_user_repo_commit_model",
     }
     engine.dispose()
 
@@ -167,6 +170,32 @@ def test_indexing_job_status_and_attempt_count_are_constrained(
             repository_id=repository.id,
             status=status,
             attempt_count=attempt_count,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_indexing_job_type_is_constrained(session: Session) -> None:
+    user = User(email="job-type@example.com")
+    session.add(user)
+    session.flush()
+    repository = Repository(
+        user_id=user.id,
+        github_owner="org",
+        github_name="project",
+        full_name="org/project",
+        canonical_url="https://github.com/org/project",
+    )
+    session.add(repository)
+    session.flush()
+    session.add(
+        IndexingJob(
+            user_id=user.id,
+            repository_id=repository.id,
+            job_type="arbitrary_task",
         )
     )
 

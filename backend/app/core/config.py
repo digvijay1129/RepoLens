@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     jwt_secret_key: SecretStr | None = Field(default=None, repr=False)
     jwt_access_token_expire_minutes: int = Field(default=60, ge=5, le=1440)
 
+    # Embeddings are opt-in. Source indexing continues to work when disabled.
+    embeddings_enabled: bool = False
+    embeddings_provider: str = "openai_compatible"
+    embeddings_api_key: SecretStr | None = Field(default=None, repr=False)
+    embeddings_base_url: str = "https://api.openai.com/v1"
+    embeddings_model: str = "text-embedding-3-small"
+    embeddings_dimensions: int = Field(default=1536, ge=1, le=8192)
+    embeddings_batch_size: int = Field(default=32, ge=1, le=64)
+    embeddings_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a normalized allow-list."""

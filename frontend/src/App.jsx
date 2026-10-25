@@ -6,7 +6,7 @@ import {
   Mail, Menu, MessageSquareText, Plus, Search, Settings2, ShieldCheck, Sparkles, Star,
   TerminalSquare, Trash2, UserRound, X,
 } from "lucide-react";
-import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getRepositoryIndexingJob, getSavedRepositories, loginAccount, registerAccount, saveRepository, startRepositoryIndex, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
+import { clearAccessToken, getAccessToken, getApiHealth, getCurrentUser, getRepositoryBranches, getRepositoryContents, getRepositoryIndexingJob, getSavedRepositories, loginAccount, registerAccount, saveRepository, startRepositoryIndex, startRepositoryEmbeddings, selectRepositoryBranch, deleteSavedRepository, setAccessToken } from "./lib/api.js";
 import { normalizeGitHubRepositoryUrl } from "./lib/githubRepository.js";
 
 const navigation = [
@@ -421,6 +421,25 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
     }
   }
 
+  async function handleStartEmbeddings() {
+    if (
+      !selectedRepository?.id
+      || selectedRepository.indexing_status !== "indexed"
+      || indexStarting
+      || indexIsActive
+    ) return;
+    setIndexStarting(true);
+    setIndexError("");
+    try {
+      const job = await startRepositoryEmbeddings(selectedRepository.id);
+      setIndexJob(job);
+    } catch (requestError) {
+      setIndexError(requestError?.message || "Unable to start embedding generation.");
+    } finally {
+      setIndexStarting(false);
+    }
+  }
+
   useEffect(() => {
     if (!indexJob || !["queued", "running"].includes(indexJob.status) || !selectedRepository?.id) {
       return undefined;
@@ -534,29 +553,38 @@ function RepositoryExplorer({ repositories, selectedRepositoryKey, onSelectRepos
         <div className="indexing-panel-heading">
           <div className="indexing-title-block">
             <span className="indexing-icon"><Sparkles size={17} /></span>
-            <div><h2>Source indexing</h2><p>Fetch safe text files, split them into source-aware chunks, and save a versioned snapshot for later retrieval.</p></div>
+            <div><h2>Source &amp; embedding pipeline</h2><p>Build a bounded source snapshot first, then generate model embeddings for source-aware semantic retrieval.</p></div>
           </div>
-          <span className={"index-status-pill index-status-" + (indexJob?.status || selectedRepository.indexing_status || "pending")}>
-            {indexJob?.status || selectedRepository.indexing_status || "pending"}
-          </span>
+          <div className="index-status-group">
+            <span className={"index-status-pill index-status-" + (selectedRepository.indexing_status || "pending")}>SOURCE: {selectedRepository.indexing_status || "pending"}</span>
+            <span className={"index-status-pill index-status-" + (selectedRepository.embedding_status || "pending")}>EMBEDDINGS: {selectedRepository.embedding_status || "pending"}</span>
+          </div>
         </div>
         <div className="indexing-panel-actions">
-          <div className="indexing-boundary-note"><ShieldCheck size={15} /><span>Never executes repository code. Files, size and total indexed bytes are bounded.</span></div>
-          <button className="button button-primary" type="button" onClick={handleStartIndexing} disabled={!selectedRepository.id || indexStarting || Boolean(indexIsActive)}>
-            {indexStarting || indexIsActive ? <><LoaderCircle className="spin" size={15} /> Indexing…</> : selectedRepository.indexing_status === "indexed" ? <>Re-index source <ArrowRight size={15} /></> : <>Index source files <ArrowRight size={15} /></>}
-          </button>
+          <div className="indexing-boundary-note"><ShieldCheck size={15} /><span>Source code is never executed. Embedding generation sends eligible source text to your configured provider; API keys stay on the backend.</span></div>
+          <div className="indexing-button-group">
+            <button className="button button-secondary" type="button" onClick={handleStartIndexing} disabled={!selectedRepository.id || indexStarting || Boolean(indexIsActive)}>
+              {indexStarting && indexJob?.job_type !== "embedding" || indexJob?.job_type === "source_indexing" && indexIsActive ? <><LoaderCircle className="spin" size={15} /> Indexing…</> : selectedRepository.indexing_status === "indexed" ? <>Re-index source <ArrowRight size={15} /></> : <>Index source files <ArrowRight size={15} /></>}
+            </button>
+            <button className="button button-primary" type="button" onClick={handleStartEmbeddings} disabled={!selectedRepository.id || selectedRepository.indexing_status !== "indexed" || indexStarting || Boolean(indexIsActive)}>
+              {indexStarting && indexJob?.job_type === "embedding" || indexJob?.job_type === "embedding" && indexIsActive ? <><LoaderCircle className="spin" size={15} /> Generating…</> : selectedRepository.embedding_status === "embedded" ? <>Re-generate embeddings <Sparkles size={15} /></> : <>Generate embeddings <ArrowRight size={15} /></>}
+            </button>
+          </div>
         </div>
         {indexError && <p className="field-error indexing-error" role="alert"><AlertCircle size={14} />{indexError}</p>}
         {indexJob && <div className="indexing-job-details">
-          <div className="indexing-job-message"><span>{indexJob.progress_message}</span><strong>{indexJob.processed_files}/{indexJob.total_files} files</strong></div>
-          <progress className="index-progress-bar" max={Math.max(indexJob.total_files || 0, 1)} value={Math.min(indexJob.processed_files || 0, Math.max(indexJob.total_files || 0, 1))} aria-label="Indexing progress" />
+          <div className="indexing-job-message"><span className={"index-status-pill index-status-" + indexJob.status}>{indexJob.status}</span><span>{indexJob.progress_message}</span><strong>{indexJob.processed_files}/{indexJob.total_files} {indexJob.job_type === "embedding" ? "chunks" : "files"}</strong></div>
+          <progress className="index-progress-bar" max={Math.max(indexJob.total_files || 0, 1)} value={Math.min(indexJob.processed_files || 0, Math.max(indexJob.total_files || 0, 1))} aria-label={indexJob.job_type === "embedding" ? "Embedding progress" : "Indexing progress"} />
           <div className="indexing-job-metrics">
-            <span><strong>{indexJob.chunk_count || 0}</strong> chunks</span>
-            <span><strong>{indexJob.skipped_files || 0}</strong> skipped files</span>
+            {indexJob.job_type === "embedding" ? <span><strong>{indexJob.processed_files || 0}</strong> embedded chunks</span> : <span><strong>{indexJob.chunk_count || 0}</strong> chunks</span>}
+            <span><strong>{indexJob.skipped_files || 0}</strong> skipped {indexJob.job_type === "embedding" ? "chunks" : "files"}</span>
+            {indexJob.embedding_model && <span>Model <code>{indexJob.embedding_model}</code></span>}
+            {indexJob.embedding_dimensions && <span><strong>{indexJob.embedding_dimensions}</strong> dimensions</span>}
             {indexJob.commit_sha && <span>Commit <code>{indexJob.commit_sha.slice(0, 7)}</code></span>}
           </div>
           {indexJob.error_message && <p className="field-error indexing-error" role="alert"><AlertCircle size={14} />{indexJob.error_message}</p>}
         </div>}
+        {selectedRepository.embedding_status === "embedded" && selectedRepository.embedding_model && <p className="embedding-active-meta"><Check size={14} /> Active embedding configuration: <strong>{selectedRepository.embedding_provider}</strong> / <strong>{selectedRepository.embedding_model}</strong> · {selectedRepository.embedding_dimensions} dimensions</p>}
       </div>
 
       <div className="file-browser panel">

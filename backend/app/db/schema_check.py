@@ -44,6 +44,11 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "indexed_commit_sha",
         "indexing_status",
         "last_indexed_at",
+        "embedding_status",
+        "embedding_provider",
+        "embedding_model",
+        "embedding_dimensions",
+        "last_embedded_at",
         "created_at",
         "updated_at",
     },
@@ -52,6 +57,10 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "repository_id",
         "user_id",
         "status",
+        "job_type",
+        "embedding_provider",
+        "embedding_model",
+        "embedding_dimensions",
         "attempt_count",
         "error_message",
         "total_files",
@@ -81,6 +90,19 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "chunk_text",
         "created_at",
     },
+    "repository_chunk_embeddings": {
+        "id",
+        "chunk_id",
+        "repository_id",
+        "user_id",
+        "commit_sha",
+        "provider",
+        "model",
+        "dimensions",
+        "content_hash",
+        "vector",
+        "created_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -100,6 +122,8 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ck_repositories_stargazers_nonnegative",
             "ck_repositories_forks_nonnegative",
             "ck_repositories_open_issues_nonnegative",
+            "ck_repositories_embedding_status_allowed",
+            "ck_repositories_embedding_dimensions_valid",
         },
         "foreign": {"fk_repositories_user_id_users"},
         "indexes": {"ix_repositories_user_updated"},
@@ -114,6 +138,7 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ck_indexing_jobs_processed_files_nonnegative",
             "ck_indexing_jobs_skipped_files_nonnegative",
             "ck_indexing_jobs_chunk_count_nonnegative",
+            "ck_indexing_jobs_job_type_allowed",
         },
         "foreign": {
             "fk_indexing_jobs_user_id_users",
@@ -138,6 +163,19 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ix_repository_chunks_user_repo_commit",
             "ix_repository_chunks_user_repo_path",
         },
+    },
+    "repository_chunk_embeddings": {
+        "primary": {"pk_repository_chunk_embeddings"},
+        "unique": {"uq_chunk_embeddings_chunk_provider_model_dimensions"},
+        "check": {
+            "ck_repository_chunk_embeddings_dimensions_positive",
+            "ck_repository_chunk_embeddings_dimensions_maximum",
+        },
+        "foreign": {
+            "fk_repository_chunk_embeddings_chunk_id_repository_chunks",
+            "fk_repository_chunk_embeddings_repository_owner",
+        },
+        "indexes": {"ix_chunk_embeddings_user_repo_commit_model"},
     },
 }
 

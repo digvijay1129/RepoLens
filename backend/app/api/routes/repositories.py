@@ -25,7 +25,8 @@ from app.db.session import get_db_session
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
 from app.models.user import User
-from app.services.indexing import run_indexing_job
+from app.services.indexing import run_embedding_job, run_indexing_job
+from app.services.embeddings import EmbeddingConfigurationError, get_embedding_configuration
 from app.services.github_client import (
     GitHubClientError,
     GitHubPublicClient,
@@ -62,6 +63,11 @@ def _saved_repository_payload(repository: Repository) -> dict:
         "default_branch": repository.default_branch,
         "selected_branch": repository.selected_branch,
         "indexing_status": repository.indexing_status,
+        "embedding_status": repository.embedding_status,
+        "embedding_provider": repository.embedding_provider,
+        "embedding_model": repository.embedding_model,
+        "embedding_dimensions": repository.embedding_dimensions,
+        "last_embedded_at": repository.last_embedded_at,
         "github_updated_at": repository.github_updated_at,
         "created_at": repository.created_at,
         "updated_at": repository.updated_at,
@@ -92,6 +98,10 @@ def _indexing_job_payload(job: IndexingJob) -> dict:
     return {
         "id": job.id,
         "repository_id": job.repository_id,
+        "job_type": job.job_type,
+        "embedding_provider": job.embedding_provider,
+        "embedding_model": job.embedding_model,
+        "embedding_dimensions": job.embedding_dimensions,
         "status": job.status,
         "attempt_count": job.attempt_count,
         "total_files": job.total_files,
@@ -351,6 +361,11 @@ def start_repository_indexing(
         .order_by(IndexingJob.created_at.desc())
     )
     if active_job is not None:
+        if active_job.job_type != "source_indexing":
+            raise HTTPException(
+                status_code=409,
+                detail="An embedding job is already running for this repository.",
+            )
         return IndexingJobResponse.model_validate(_indexing_job_payload(active_job))
 
     job = IndexingJob(
@@ -359,11 +374,74 @@ def start_repository_indexing(
         status="queued",
         progress_message="Queued for indexing.",
     )
-    repository.indexing_status = "indexing"
     db.add(job)
     db.commit()
     db.refresh(job)
     background_tasks.add_task(run_indexing_job, job.id)
+    return IndexingJobResponse.model_validate(_indexing_job_payload(job))
+
+
+
+@router.post(
+    "/saved/{repository_id}/embeddings",
+    response_model=IndexingJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Generate embeddings for an indexed repository snapshot",
+)
+def start_repository_embeddings(
+    repository_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> IndexingJobResponse:
+    """Queue owner-scoped embedding generation using the configured provider and model."""
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    try:
+        settings = get_embedding_configuration()
+    except EmbeddingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if repository.indexing_status != "indexed" or not repository.indexed_commit_sha:
+        raise HTTPException(
+            status_code=409,
+            detail="Index source files successfully before generating embeddings.",
+        )
+
+    active_job = db.scalar(
+        select(IndexingJob)
+        .where(
+            IndexingJob.repository_id == repository.id,
+            IndexingJob.user_id == current_user.id,
+            IndexingJob.status.in_(["queued", "running"]),
+        )
+        .order_by(IndexingJob.created_at.desc())
+    )
+    if active_job is not None:
+        if active_job.job_type != "embedding":
+            raise HTTPException(
+                status_code=409,
+                detail="A source-indexing job is already running for this repository.",
+            )
+        return IndexingJobResponse.model_validate(_indexing_job_payload(active_job))
+
+    provider_name = settings.embeddings_provider.strip().lower()
+    model_name = settings.embeddings_model.strip()
+    dimensions = settings.embeddings_dimensions
+    job = IndexingJob(
+        repository_id=repository.id,
+        user_id=current_user.id,
+        job_type="embedding",
+        embedding_provider=provider_name,
+        embedding_model=model_name,
+        embedding_dimensions=dimensions,
+        status="queued",
+        commit_sha=repository.indexed_commit_sha,
+        progress_message=f"Queued embeddings for {model_name}.",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(run_embedding_job, job.id)
     return IndexingJobResponse.model_validate(_indexing_job_payload(job))
 
 
