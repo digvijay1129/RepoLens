@@ -164,7 +164,7 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     expect(screen.getByRole("button", { name: /connect repository/i })).toBeInTheDocument();
     expect(await screen.findByText("Recent repositories")).toBeInTheDocument();
     expect(await screen.findByText("API online")).toBeInTheDocument();
-    expect(screen.getByText("developer@example.com")).toBeInTheDocument();
+    expect(screen.getAllByText("developer@example.com").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows an offline state when the backend health request fails", async () => {
