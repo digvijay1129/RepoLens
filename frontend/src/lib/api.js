@@ -177,3 +177,27 @@ export async function searchSavedRepository(repositoryId, payload) {
     },
   );
 }
+
+
+export async function chatWithSavedRepository(repositoryId, payload) {
+  return requestJson(
+    "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) + "/chat",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function getRepositoryConversations(repositoryId) {
+  return requestJson(
+    "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) + "/conversations",
+  );
+}
+
+export async function getRepositoryConversation(repositoryId, conversationId) {
+  return requestJson(
+    "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) +
+    "/conversations/" + encodeURIComponent(conversationId),
+  );
+}

@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     embeddings_batch_size: int = Field(default=32, ge=1, le=64)
     embeddings_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
+    # Chat generation is separate from embeddings and is opt-in.
+    llm_enabled: bool = False
+    llm_provider: str = "openai_compatible"
+    llm_api_key: SecretStr | None = Field(default=None, repr=False)
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: float = Field(default=60.0, ge=1.0, le=180.0)
+    llm_max_completion_tokens: int = Field(default=1200, ge=128, le=4096)
+    rag_context_chunks: int = Field(default=8, ge=1, le=12)
+    rag_history_messages: int = Field(default=8, ge=0, le=16)
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a normalized allow-list."""

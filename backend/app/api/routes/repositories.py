@@ -22,6 +22,12 @@ from app.api.schemas.repository import (
     SelectBranchRequest,
 )
 from app.api.schemas.search import RepositorySearchRequest, RepositorySearchResponse
+from app.api.schemas.chat import (
+    ChatConversationHistory,
+    ChatConversationListResponse,
+    RepositoryChatRequest,
+    RepositoryChatResponse,
+)
 from app.db.session import get_db_session
 from app.models.indexing_job import IndexingJob
 from app.models.repository import Repository
@@ -33,6 +39,13 @@ from app.services.embeddings import (
     get_embedding_configuration,
 )
 from app.services.retrieval import SearchReadinessError, search_repository_chunks
+from app.services.chat import (
+    ChatReadinessError,
+    get_repository_conversation,
+    list_repository_conversations,
+    run_repository_chat,
+)
+from app.services.llm import LLMConfigurationError, LLMProviderError
 from app.services.github_client import (
     GitHubClientError,
     GitHubPublicClient,
@@ -475,6 +488,77 @@ def get_repository_indexing_job(
         raise HTTPException(status_code=404, detail="Indexing job was not found.")
     return IndexingJobResponse.model_validate(_indexing_job_payload(job))
 
+
+
+
+@router.get(
+    "/saved/{repository_id}/conversations",
+    response_model=ChatConversationListResponse,
+    summary="List chat conversations for a saved repository",
+)
+def list_saved_repository_conversations(
+    repository_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> ChatConversationListResponse:
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    items = list_repository_conversations(db, repository, current_user.id)
+    return ChatConversationListResponse(repository_id=repository.id, items=items)
+
+
+@router.get(
+    "/saved/{repository_id}/conversations/{conversation_id}",
+    response_model=ChatConversationHistory,
+    summary="Read owner-scoped conversation history",
+)
+def read_saved_repository_conversation(
+    repository_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> ChatConversationHistory:
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    try:
+        return ChatConversationHistory.model_validate(
+            get_repository_conversation(db, repository, current_user.id, conversation_id)
+        )
+    except ChatReadinessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/saved/{repository_id}/chat",
+    response_model=RepositoryChatResponse,
+    summary="Ask a repository-grounded RAG question",
+)
+async def chat_with_saved_repository(
+    repository_id: uuid.UUID,
+    payload: RepositoryChatRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> RepositoryChatResponse:
+    repository = _get_owned_repository(db, repository_id, current_user.id)
+    try:
+        result = await run_repository_chat(
+            db,
+            repository,
+            current_user.id,
+            payload.message,
+            conversation_id=payload.conversation_id,
+        )
+        return RepositoryChatResponse.model_validate(result)
+    except ChatReadinessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SearchReadinessError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LLMConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LLMProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except EmbeddingProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

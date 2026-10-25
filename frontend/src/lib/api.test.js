@@ -14,6 +14,9 @@ import {
   startRepositoryIndex,
   startRepositoryEmbeddings,
   searchSavedRepository,
+  chatWithSavedRepository,
+  getRepositoryConversations,
+  getRepositoryConversation,
   setAccessToken,
 } from "./api.js";
 
@@ -211,4 +214,38 @@ describe("RepoLens API client", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       query: "auth handler", mode: "hybrid", limit: 8,
     });
+  });
+
+
+  it("creates repository chat turns and loads saved conversation history", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "conversation-1", answer: "Grounded answer [S1]." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [{ id: "conversation-1", title: "Auth flow" }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "conversation-1", messages: [] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+
+    await chatWithSavedRepository("repo-1", { message: "Explain authentication" });
+    const conversations = await getRepositoryConversations("repo-1");
+    const history = await getRepositoryConversation("repo-1", "conversation-1");
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/chat$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message: "Explain authentication" });
+    expect(conversations.items[0].title).toBe("Auth flow");
+    expect(history.id).toBe("conversation-1");
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/repositories\/saved\/repo-1\/conversations$/);
+    expect(fetchMock.mock.calls[2][0]).toMatch(/\/repositories\/saved\/repo-1\/conversations\/conversation-1$/);
   });

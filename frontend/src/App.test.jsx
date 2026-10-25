@@ -19,6 +19,9 @@ import {
   startRepositoryIndex,
   startRepositoryEmbeddings,
   searchSavedRepository,
+  chatWithSavedRepository,
+  getRepositoryConversations,
+  getRepositoryConversation,
   setAccessToken,
   deleteSavedRepository,
 } from "./lib/api.js";
@@ -40,6 +43,9 @@ vi.mock("./lib/api.js", () => ({
   startRepositoryIndex: vi.fn(),
   startRepositoryEmbeddings: vi.fn(),
   searchSavedRepository: vi.fn(),
+  chatWithSavedRepository: vi.fn(),
+  getRepositoryConversations: vi.fn(),
+  getRepositoryConversation: vi.fn(),
   deleteSavedRepository: vi.fn(),
 }));
 
@@ -116,6 +122,57 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
     getApiHealth.mockResolvedValue({ status: "ok" });
     getCurrentUser.mockResolvedValue(userProfile);
     getSavedRepositories.mockResolvedValue([]);
+    getRepositoryConversations.mockResolvedValue({ repository_id: repository.id, items: [] });
+    getRepositoryConversation.mockResolvedValue({ id: "conversation-1", repository_id: repository.id, title: "Saved chat", messages: [] });
+    chatWithSavedRepository.mockResolvedValue({
+      id: "conversation-1",
+      repository_id: repository.id,
+      title: "How is authentication validated?",
+      created_at: "2026-10-25T00:00:00Z",
+      updated_at: "2026-10-25T00:00:01Z",
+      answer: "Token validation is delegated to authenticate_user [S1].",
+      retrieval_mode: "keyword",
+      commit_sha: "a".repeat(40),
+      sources: [{
+        id: "S1",
+        file_path: "backend/app/auth.py",
+        language: "python",
+        start_line: 12,
+        end_line: 28,
+        symbol_names: ["authenticate_user"],
+        score: 1,
+        match_types: ["keyword"],
+        commit_sha: "a".repeat(40),
+        citation_url: "https://github.com/digvijay1129/RepoLens/blob/" + "a".repeat(40) + "/backend/app/auth.py#L12-L28",
+      }],
+      user_message: {
+        id: "message-user-1",
+        conversation_id: "conversation-1",
+        role: "user",
+        content: "How is authentication validated?",
+        sources: [],
+        created_at: "2026-10-25T00:00:00Z",
+      },
+      assistant_message: {
+        id: "message-assistant-1",
+        conversation_id: "conversation-1",
+        role: "assistant",
+        content: "Token validation is delegated to authenticate_user [S1].",
+        sources: [{
+          id: "S1",
+          file_path: "backend/app/auth.py",
+          language: "python",
+          start_line: 12,
+          end_line: 28,
+          symbol_names: ["authenticate_user"],
+          score: 1,
+          match_types: ["keyword"],
+          commit_sha: "a".repeat(40),
+          citation_url: "https://github.com/digvijay1129/RepoLens/blob/" + "a".repeat(40) + "/backend/app/auth.py#L12-L28",
+        }],
+        created_at: "2026-10-25T00:00:01Z",
+      },
+    });
     getRepositoryBranches.mockResolvedValue({
       repository_id: repository.id,
       selected_branch: "main",
@@ -426,6 +483,34 @@ describe("RepoLens authenticated workspace and repository browsing", () => {
   });
 
 
+
+
+  it("asks a repository question and renders a grounded answer with citations", async () => {
+    const user = userEvent.setup();
+    const indexedRepository = {
+      ...repository,
+      indexing_status: "indexed",
+      indexed_commit_sha: "a".repeat(40),
+    };
+    getSavedRepositories.mockResolvedValueOnce([indexedRepository]);
+    render(<App />);
+    await screen.findByText("Recent repositories");
+    await user.click(screen.getByRole("button", { name: /^code explorer/i }));
+    await screen.findByRole("heading", { name: "Code explorer" });
+    expect(screen.getByRole("heading", { name: "Ask RepoLens" })).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Ask about this repository" }),
+      "How is authentication validated?",
+    );
+    await user.click(screen.getByRole("button", { name: /ask question/i }));
+
+    expect(chatWithSavedRepository).toHaveBeenCalledWith(indexedRepository.id, {
+      message: "How is authentication validated?",
+    });
+    expect(await screen.findByText("Token validation is delegated to authenticate_user [S1].")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /backend\/app\/auth\.py/ })).toHaveAttribute("href", expect.stringContaining("#L12-L28"));
+  });
 
   it("searches an indexed repository and renders a line-level source citation", async () => {
     const user = userEvent.setup();
