@@ -166,3 +166,14 @@ export async function getRepositoryContents(owner, repository, options = {}) {
 }
 
 export { API_BASE_URL };
+
+
+export async function searchSavedRepository(repositoryId, payload) {
+  return requestJson(
+    "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) + "/search",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}

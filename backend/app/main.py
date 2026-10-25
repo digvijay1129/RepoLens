@@ -10,8 +10,8 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description="Authenticated RepoLens workspaces with safe source indexing and configurable embeddings.",
-    version="0.5.0",
+    description="Authenticated RepoLens workspaces with pgvector semantic and hybrid source retrieval.",
+    version="0.6.0",
     openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",

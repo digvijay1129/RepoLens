@@ -15,6 +15,7 @@ on:
       - "phase-4/**"
       - "phase-4a/**"
       - "phase-4b/**"
+      - "phase-5/**"
   pull_request:
     branches:
       - main
@@ -37,6 +38,10 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r backend/requirements.txt
+      - name: Install pgvector extension without Docker
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-18-pgvector
       - name: Start local PostgreSQL without Docker
         shell: bash
         run: |
@@ -48,6 +53,7 @@ jobs:
           CREATE ROLE repolens_user WITH LOGIN PASSWORD :'repolens_password';
           SQL
           sudo -u postgres createdb --owner=repolens_user repolens
+          sudo -u postgres psql -d repolens -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector;'
       - name: Apply schema migration to PostgreSQL
         working-directory: backend
         run: python -m alembic upgrade head

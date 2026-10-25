@@ -1,12 +1,14 @@
-"""Stored embedding vectors keyed by source chunk and provider/model version.
+"""Versioned source-chunk embeddings stored in pgvector on PostgreSQL.
 
-JSON storage keeps local development extension-free. Phase 5 can migrate the same
-versioned vectors to pgvector without coupling the embedding provider to storage.
+SQLite uses JSON only for isolated unit tests; production PostgreSQL uses the
+native pgvector type so cosine-distance queries execute inside the database.
 """
 
 import uuid
 from datetime import datetime
+from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -15,6 +17,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     String,
+    TypeDecorator,
     UniqueConstraint,
     Uuid,
     func,
@@ -22,6 +25,29 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+class VectorOrJSON(TypeDecorator):
+    """Use native PostgreSQL vector storage and JSON only for SQLite unit tests."""
+
+    impl = JSON
+    cache_ok = True
+    comparator_factory = Vector.comparator_factory
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(Vector())
+        return dialect.type_descriptor(JSON())
+
+    def process_bind_param(self, value: Any, dialect):
+        if value is None:
+            return None
+        return [float(item) for item in value]
+
+    def process_result_value(self, value: Any, dialect):
+        if value is None:
+            return None
+        return [float(item) for item in value]
 
 
 class RepositoryChunkEmbedding(Base):
@@ -68,7 +94,7 @@ class RepositoryChunkEmbedding(Base):
     model: Mapped[str] = mapped_column(String(150), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    vector: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    vector: Mapped[list[float]] = mapped_column(VectorOrJSON(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -13,6 +13,7 @@ import {
   selectRepositoryBranch,
   startRepositoryIndex,
   startRepositoryEmbeddings,
+  searchSavedRepository,
   setAccessToken,
 } from "./api.js";
 
@@ -180,4 +181,34 @@ describe("RepoLens API client", () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/embeddings$/);
     expect(fetchMock.mock.calls[0][1].method).toBe("POST");
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer signed-token");
+  });
+
+
+  it("searches a saved repository with the selected retrieval mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        repository_id: "repo-1",
+        repository: "org/repo",
+        query: "auth handler",
+        mode: "hybrid",
+        commit_sha: "a".repeat(40),
+        result_count: 0,
+        results: [],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+    const result = await searchSavedRepository("repo-1", {
+      query: "auth handler",
+      mode: "hybrid",
+      limit: 8,
+    });
+    expect(result.mode).toBe("hybrid");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/repositories\/saved\/repo-1\/search$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      query: "auth handler", mode: "hybrid", limit: 8,
+    });
   });

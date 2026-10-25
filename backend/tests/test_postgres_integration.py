@@ -30,3 +30,25 @@ def test_migrated_postgres_database_has_expected_schema() -> None:
         assert issues == []
     finally:
         engine.dispose()
+
+
+def test_pgvector_cosine_distance_and_postgres_full_text_are_available() -> None:
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    try:
+        with engine.begin() as connection:
+            # TEMP objects make this integration smoke test read/write only within
+            # the current connection and avoid changing the application's data.
+            connection.execute(text("CREATE TEMP TABLE repolens_vector_smoke (id integer, embedding vector)"))
+            connection.execute(
+                text("INSERT INTO repolens_vector_smoke (id, embedding) VALUES (1, '[1,0,0]'), (2, '[0,1,0]')")
+            )
+            nearest = connection.execute(
+                text("SELECT id FROM repolens_vector_smoke ORDER BY embedding <=> '[1,0,0]'::vector LIMIT 1")
+            ).scalar_one()
+            keyword_match = connection.execute(
+                text("SELECT to_tsvector('simple', 'authenticate_user handler') @@ plainto_tsquery('simple', 'authenticate_user')")
+            ).scalar_one()
+        assert nearest == 1
+        assert keyword_match is True
+    finally:
+        engine.dispose()
