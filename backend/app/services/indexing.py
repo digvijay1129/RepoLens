@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import uuid
 from collections.abc import Callable
@@ -305,6 +306,11 @@ async def run_indexing_job(
                 repository.indexed_commit_sha = commit_sha
                 repository.indexing_status = "indexed"
                 repository.last_indexed_at = _now()
+                repository.embedding_status = "pending"
+                repository.embedding_provider = None
+                repository.embedding_model = None
+                repository.embedding_dimensions = None
+                repository.last_embedded_at = None
                 job.status = "completed"
                 job.processed_files = processed
                 job.skipped_files = skipped_files
@@ -343,3 +349,266 @@ async def run_indexing_job(
                 prior_status=prior_status,
                 safe_message="Indexing failed due to an internal error. Check backend logs.",
             )
+
+
+
+async def run_embedding_job(
+    job_id: uuid.UUID | str,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+    embedding_provider_factory: Callable[[], Any] | None = None,
+) -> None:
+    """Generate and persist a selected provider/model's embeddings for an indexed snapshot.
+
+    Embeddings are versioned by provider/model/dimension, so a failed model migration
+    does not overwrite a previously completed embedding configuration.
+    """
+    from app.services.embeddings import (
+        EmbeddingConfigurationError,
+        EmbeddingProviderError,
+        OpenAICompatibleEmbeddingProvider,
+        get_embedding_configuration,
+    )
+    from app.models.repository_chunk_embedding import RepositoryChunkEmbedding
+
+    try:
+        normalized_job_id = job_id if isinstance(job_id, uuid.UUID) else uuid.UUID(str(job_id))
+    except (ValueError, TypeError, AttributeError):
+        return
+
+    factory = session_factory or sessionmaker(bind=get_engine(), expire_on_commit=False)
+    with factory() as db:
+        job = db.get(IndexingJob, normalized_job_id)
+        if job is None or job.status != "queued" or job.job_type != "embedding":
+            return
+
+        repository = db.scalar(
+            select(Repository).where(
+                Repository.id == job.repository_id,
+                Repository.user_id == job.user_id,
+            )
+        )
+        if repository is None:
+            job.status = "failed"
+            job.error_message = "The saved repository was not found."
+            job.progress_message = "Embedding generation failed."
+            job.finished_at = _now()
+            db.commit()
+            return
+
+        previous_embedding_status = repository.embedding_status
+        previous_provider = repository.embedding_provider
+        previous_model = repository.embedding_model
+        previous_dimensions = repository.embedding_dimensions
+
+        try:
+            settings = get_embedding_configuration()
+            provider_name = settings.embeddings_provider.strip().lower()
+            model_name = settings.embeddings_model.strip()
+            dimensions = settings.embeddings_dimensions
+            if (
+                (job.embedding_provider is not None and job.embedding_provider != provider_name)
+                or (job.embedding_model is not None and job.embedding_model != model_name)
+                or (job.embedding_dimensions is not None and job.embedding_dimensions != dimensions)
+            ):
+                raise EmbeddingConfigurationError(
+                    "The embedding configuration changed after this job was queued. "
+                    "Start a new embedding job to use the current configuration."
+                )
+            provider_factory = embedding_provider_factory or (
+                lambda: OpenAICompatibleEmbeddingProvider(settings)
+            )
+            commit_sha = repository.indexed_commit_sha
+            if repository.indexing_status != "indexed" or not commit_sha:
+                raise IndexingPipelineError(
+                    "Index source files successfully before generating embeddings."
+                )
+
+            chunks = db.scalars(
+                select(RepositoryChunk)
+                .where(
+                    RepositoryChunk.repository_id == repository.id,
+                    RepositoryChunk.user_id == repository.user_id,
+                    RepositoryChunk.commit_sha == commit_sha,
+                )
+                .order_by(RepositoryChunk.file_path, RepositoryChunk.chunk_index)
+            ).all()
+            if not chunks:
+                raise IndexingPipelineError(
+                    "No source chunks are available. Index the repository before generating embeddings."
+                )
+
+            job.status = "running"
+            job.attempt_count += 1
+            job.started_at = _now()
+            job.finished_at = None
+            job.error_message = None
+            job.commit_sha = commit_sha
+            job.embedding_provider = provider_name
+            job.embedding_model = model_name
+            job.embedding_dimensions = dimensions
+            job.total_files = len(chunks)
+            job.processed_files = 0
+            job.skipped_files = 0
+            job.chunk_count = len(chunks)
+            job.progress_message = (
+                f"Preparing {len(chunks)} source chunks for {model_name} embeddings."
+            )
+            repository.embedding_status = "embedding"
+            db.commit()
+
+            existing_embeddings = db.scalars(
+                select(RepositoryChunkEmbedding).where(
+                    RepositoryChunkEmbedding.repository_id == repository.id,
+                    RepositoryChunkEmbedding.user_id == repository.user_id,
+                    RepositoryChunkEmbedding.commit_sha == commit_sha,
+                    RepositoryChunkEmbedding.provider == provider_name,
+                    RepositoryChunkEmbedding.model == model_name,
+                    RepositoryChunkEmbedding.dimensions == dimensions,
+                )
+            ).all()
+            by_chunk_id = {item.chunk_id: item for item in existing_embeddings}
+            pending_chunks = [
+                chunk for chunk in chunks
+                if (
+                    chunk.id not in by_chunk_id
+                    or by_chunk_id[chunk.id].content_hash != chunk.content_hash
+                )
+            ]
+            already_complete = len(chunks) - len(pending_chunks)
+            job.processed_files = already_complete
+            job.progress_message = (
+                f"{already_complete} of {len(chunks)} chunks already have matching embeddings."
+            )
+            db.commit()
+
+            if not pending_chunks:
+                job.status = "completed"
+                job.progress_message = "Embeddings for this source commit and model are already up to date."
+                job.finished_at = _now()
+                repository.embedding_status = "embedded"
+                repository.embedding_provider = provider_name
+                repository.embedding_model = model_name
+                repository.embedding_dimensions = dimensions
+                if repository.last_embedded_at is None:
+                    repository.last_embedded_at = _now()
+                db.commit()
+                return
+
+            batch_size = settings.embeddings_batch_size
+            async with provider_factory() as provider:
+                if (
+                    provider.provider_name != provider_name
+                    or provider.model_name != model_name
+                    or provider.dimensions != dimensions
+                ):
+                    raise EmbeddingProviderError(
+                        "The embedding provider does not match the configured provider, model, and dimensions."
+                    )
+
+                for batch_start in range(0, len(pending_chunks), batch_size):
+                    batch = pending_chunks[batch_start: batch_start + batch_size]
+                    vectors = await provider.embed_texts([chunk.chunk_text for chunk in batch])
+                    if len(vectors) != len(batch):
+                        raise EmbeddingProviderError(
+                            "The embedding provider returned an incomplete batch."
+                        )
+
+                    for chunk, vector in zip(batch, vectors, strict=True):
+                        if len(vector) != dimensions or any(
+                            isinstance(value, bool)
+                            or not isinstance(value, (int, float))
+                            or not math.isfinite(float(value))
+                            for value in vector
+                        ):
+                            raise EmbeddingProviderError(
+                                "The embedding provider returned an invalid vector."
+                            )
+                        embedding = by_chunk_id.get(chunk.id)
+                        if embedding is None:
+                            embedding = RepositoryChunkEmbedding(
+                                chunk_id=chunk.id,
+                                repository_id=repository.id,
+                                user_id=repository.user_id,
+                                commit_sha=commit_sha,
+                                provider=provider_name,
+                                model=model_name,
+                                dimensions=dimensions,
+                                content_hash=chunk.content_hash,
+                                vector=[float(value) for value in vector],
+                            )
+                            db.add(embedding)
+                            by_chunk_id[chunk.id] = embedding
+                        else:
+                            embedding.content_hash = chunk.content_hash
+                            embedding.vector = [float(value) for value in vector]
+                    processed_count = already_complete + batch_start + len(batch)
+                    job.processed_files = processed_count
+                    job.progress_message = (
+                        f"Generated embeddings for {processed_count}/{len(chunks)} source chunks."
+                    )
+                    db.commit()
+
+            repository.embedding_status = "embedded"
+            repository.embedding_provider = provider_name
+            repository.embedding_model = model_name
+            repository.embedding_dimensions = dimensions
+            repository.last_embedded_at = _now()
+            job.status = "completed"
+            job.processed_files = len(chunks)
+            job.chunk_count = len(chunks)
+            job.skipped_files = 0
+            job.error_message = None
+            job.progress_message = (
+                f"Generated {len(chunks)} embeddings with {provider_name}/{model_name}."
+            )
+            job.finished_at = _now()
+            db.commit()
+
+        except (EmbeddingConfigurationError, EmbeddingProviderError, IndexingPipelineError, ValueError) as exc:
+            db.rollback()
+            failed_job = db.get(IndexingJob, normalized_job_id)
+            failed_repository = db.scalar(
+                select(Repository).where(
+                    Repository.id == failed_job.repository_id,
+                    Repository.user_id == failed_job.user_id,
+                )
+            ) if failed_job is not None else None
+            if failed_job is not None:
+                failed_job.status = "failed"
+                failed_job.error_message = str(exc)[:1000]
+                failed_job.progress_message = "Embedding generation failed. Existing completed embeddings were preserved."
+                failed_job.finished_at = _now()
+            if failed_repository is not None:
+                if previous_embedding_status == "embedded":
+                    failed_repository.embedding_status = "embedded"
+                    failed_repository.embedding_provider = previous_provider
+                    failed_repository.embedding_model = previous_model
+                    failed_repository.embedding_dimensions = previous_dimensions
+                else:
+                    failed_repository.embedding_status = "failed"
+            db.commit()
+        except Exception:
+            logger.exception("RepoLens embedding job failed (job_id=%s)", normalized_job_id)
+            db.rollback()
+            failed_job = db.get(IndexingJob, normalized_job_id)
+            failed_repository = db.scalar(
+                select(Repository).where(
+                    Repository.id == failed_job.repository_id,
+                    Repository.user_id == failed_job.user_id,
+                )
+            ) if failed_job is not None else None
+            if failed_job is not None:
+                failed_job.status = "failed"
+                failed_job.error_message = "Embedding generation failed due to an internal error. Check backend logs."
+                failed_job.progress_message = "Embedding generation failed."
+                failed_job.finished_at = _now()
+            if failed_repository is not None:
+                if previous_embedding_status == "embedded":
+                    failed_repository.embedding_status = "embedded"
+                    failed_repository.embedding_provider = previous_provider
+                    failed_repository.embedding_model = previous_model
+                    failed_repository.embedding_dimensions = previous_dimensions
+                else:
+                    failed_repository.embedding_status = "failed"
+            db.commit()

@@ -78,6 +78,11 @@ class SavedRepositoryResponse(BaseModel):
     default_branch: str | None
     selected_branch: str
     indexing_status: str
+    embedding_status: str
+    embedding_provider: str | None
+    embedding_model: str | None
+    embedding_dimensions: int | None
+    last_embedded_at: datetime | None
     github_updated_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -108,6 +113,10 @@ class IndexingJobResponse(BaseModel):
 
     id: uuid.UUID
     repository_id: uuid.UUID
+    job_type: str
+    embedding_provider: str | None
+    embedding_model: str | None
+    embedding_dimensions: int | None
     status: str
     attempt_count: int
     total_files: int

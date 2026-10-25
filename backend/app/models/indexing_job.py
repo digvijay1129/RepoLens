@@ -32,6 +32,10 @@ class IndexingJob(Base):
             "status IN ('queued', 'running', 'completed', 'failed')",
             name="status_allowed",
         ),
+        CheckConstraint(
+            "job_type IN ('source_indexing', 'embedding')",
+            name="job_type_allowed",
+        ),
         CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
         CheckConstraint("total_files >= 0", name="total_files_nonnegative"),
         CheckConstraint("processed_files >= 0", name="processed_files_nonnegative"),
@@ -49,6 +53,12 @@ class IndexingJob(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="queued", server_default="queued"
     )
+    job_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="source_indexing", server_default="source_indexing"
+    )
+    embedding_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

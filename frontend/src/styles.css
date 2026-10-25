@@ -201,3 +201,15 @@
 .indexing-job-metrics code{padding:3px 5px;border:1px solid #e8e6f4;border-radius:4px;background:#f5f4fc;color:#7d6ac8;font:9px var(--mono)}
 .indexing-error{margin:0;padding:8px 10px;border-radius:7px;background:#fff7f7;font-size:10px}
 @media(max-width:680px){.indexing-panel{padding:14px}.indexing-panel-heading{align-items:flex-start}.indexing-panel-actions{align-items:stretch;flex-direction:column}.indexing-panel-actions .button{width:100%}.indexing-job-message{flex-direction:column;gap:4px}}
+
+
+/* Phase 4B — configurable embedding generation */
+.index-status-group{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.indexing-button-group{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.indexing-button-group .button{white-space:nowrap}
+.index-status-embedded{border-color:#d7eee4;background:#f0faf5;color:#388c72}
+.embedding-active-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0;color:#728c80;font-size:9px;line-height:1.6}
+.embedding-active-meta svg{color:#388c72}
+.embedding-active-meta strong{color:#4b6c60;font-weight:700}
+@media(max-width:760px){.indexing-panel-actions{align-items:stretch;flex-direction:column}.indexing-button-group{display:grid;grid-template-columns:1fr 1fr}.indexing-button-group .button{width:100%;white-space:normal;min-height:39px;line-height:1.35;padding:8px 10px}.index-status-group{align-items:flex-end}}
+@media(max-width:520px){.indexing-button-group{grid-template-columns:1fr}.indexing-panel-heading{gap:7px}.index-status-group .index-status-pill{font-size:7px;max-width:110px}.indexing-title-block p{max-width:100%}}

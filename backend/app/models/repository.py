@@ -32,6 +32,14 @@ class Repository(Base):
             name="indexing_status_allowed",
         ),
         CheckConstraint("full_name = lower(full_name)", name="full_name_lowercase"),
+        CheckConstraint(
+            "embedding_status IN ('pending', 'embedding', 'embedded', 'failed')",
+            name="embedding_status_allowed",
+        ),
+        CheckConstraint(
+            "embedding_dimensions IS NULL OR embedding_dimensions BETWEEN 1 AND 8192",
+            name="embedding_dimensions_valid",
+        ),
         CheckConstraint("stargazers_count >= 0", name="stargazers_nonnegative"),
         CheckConstraint("forks_count >= 0", name="forks_nonnegative"),
         CheckConstraint("open_issues_count >= 0", name="open_issues_nonnegative"),
@@ -65,6 +73,13 @@ class Repository(Base):
         String(20), nullable=False, default="pending", server_default="pending"
     )
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    embedding_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    embedding_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -142,6 +142,12 @@ export async function startRepositoryIndex(repositoryId) {
   });
 }
 
+export async function startRepositoryEmbeddings(repositoryId) {
+  return requestJson("/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) + "/embeddings", {
+    method: "POST",
+  });
+}
+
 export async function getRepositoryIndexingJob(repositoryId, jobId) {
   return requestJson(
     "/api/v1/repositories/saved/" + encodeURIComponent(repositoryId) +

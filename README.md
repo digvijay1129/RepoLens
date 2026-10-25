@@ -10,6 +10,7 @@
 - Argon2 password hashing, short-lived signed JWT access tokens, authenticated workspace APIs
 - Public GitHub REST API integration for repository metadata, branches, directory listings, and bounded source retrieval
 - Persistent indexing jobs, source-safe file filtering, deterministic overlapping chunks, line references and content hashes
+- Configurable OpenAI-compatible embedding provider, versioned vector storage metadata, retryable owner-scoped embedding jobs
 - Persistent owner-scoped repository metadata and selected-branch preference
 - CI tests, live PostgreSQL migration verification, and production frontend build
 
@@ -96,6 +97,7 @@ Open the local URL printed by Vite (normally http://localhost:5173).
 4. Open **Code explorer**. Use the branch selector to choose an available branch; the selection is saved.
 5. Browse folders. File links open the current selected branch's file page on GitHub.
 6. Click **Index source files** to queue an indexing job. The workspace shows progress, skipped files, chunk count, and the commit snapshot when indexing finishes.
+7. To generate embeddings, set `EMBEDDINGS_ENABLED=true` and configure the backend-only provider values in `backend/.env`, then select **Generate embeddings** in Code Explorer. Embeddings are opt-in and are not required for source indexing.
 
 Repository metadata, branch preference and completed source chunks persist across sessions and are scoped to the signed-in user's ID. Indexing reads only bounded, allowlisted UTF-8 text files from public repositories, records file paths and line ranges, and never executes source code. Embeddings and semantic retrieval are planned for Phase 4B/5.
 
@@ -115,7 +117,8 @@ Repository metadata, branch preference and completed source chunks persist acros
 - `GET /api/v1/repositories/saved/{repository_id}/branches` — list branches after checking ownership
 - `PATCH /api/v1/repositories/saved/{repository_id}/branch` — validate and persist selected branch
 - `POST /api/v1/repositories/saved/{repository_id}/index` — queue a safe source indexing job
-- `GET /api/v1/repositories/saved/{repository_id}/jobs/{job_id}` — read owner-scoped indexing progress
+- `GET /api/v1/repositories/saved/{repository_id}/jobs/{job_id}` — read owner-scoped indexing/embedding progress
+- `POST /api/v1/repositories/saved/{repository_id}/embeddings` — queue configured embedding generation for the current indexed snapshot
 - `POST /api/v1/repositories/inspect` — public metadata preview
 - `GET /api/v1/repositories/{owner}/{repository}/contents` — public directory listing with optional `path` and `ref`
 
@@ -155,10 +158,10 @@ GitHub Actions starts a local PostgreSQL service without Docker, applies the Ale
 - [x] Phase 3A: public GitHub metadata and directory browsing
 - [x] Phase 3B implementation: authentication, persistent owned repositories and branch selection (review and verify this phase before continuing)
 - [x] Phase 4A implementation: bounded source fetching, safe file filtering, chunking, persistent indexing jobs and snapshot management (verify before continuing)
-- [ ] Phase 4B: embedding provider integration and vector-ready chunk metadata
+- [x] Phase 4B implementation: configurable embeddings, versioned vector storage and embedding jobs (verify before continuing)
 - [ ] Phase 5: hybrid retrieval using PostgreSQL full-text search and pgvector
 - [ ] Phase 6: grounded LLM chat and source citations
 - [ ] Phase 7: full workflow polish, evaluation and performance
 - [ ] Phase 8: deployment, security review and final ZIP packaging
 
-See [Phase 3B notes](docs/PHASE_3B.md) and [Phase 4A notes](docs/PHASE_4A.md) for implementation details and validation boundaries.
+See [Phase 3B notes](docs/PHASE_3B.md), [Phase 4A notes](docs/PHASE_4A.md), and [Phase 4B notes](docs/PHASE_4B.md) for implementation details and validation boundaries.
