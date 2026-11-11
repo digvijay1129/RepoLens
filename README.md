@@ -1,96 +1,250 @@
 # RepoLens
 
-**RepoLens is a GitHub Codebase Intelligence Assistant** that helps developers explore, index, search, and ask questions about public GitHub repositories. It combines a React workspace, FastAPI backend, PostgreSQL, pgvector, hybrid retrieval, and citation-grounded RAG chat.
+**GitHub Codebase Intelligence Assistant**
 
-[Repository](https://github.com/digvijay1129/RepoLens) · [Issues](https://github.com/digvijay1129/RepoLens/issues) · [Security policy](SECURITY.md)
+RepoLens helps developers understand public GitHub repositories by browsing source files, indexing a commit snapshot, searching code with keyword and semantic retrieval, and asking questions through retrieval-augmented generation (RAG). Answers include source references that link back to repository files and line ranges.
 
-## Highlights
+---
 
-- **Repository workspace:** connect public GitHub repositories, browse directories, and switch branches.
-- **Safe source indexing:** bounded retrieval of allowlisted text files, deterministic overlapping chunks, commit snapshots, line ranges, and content hashes. Source files are never executed.
-- **Hybrid code search:** PostgreSQL full-text keyword search plus pgvector cosine similarity, with reciprocal-rank fusion and source-line references.
-- **AI codebase Q&A:** optional OpenRouter-compatible LLM integration generates answers grounded in retrieved source chunks and links citations back to files and lines.
-- **Persistent workspace:** PostgreSQL stores accounts, saved repositories, indexing/embedding jobs, chunk metadata, and conversation history.
-- **Evaluation:** offline retrieval metrics include Recall@k, MRR, nDCG@k, citation validity, support precision, and coverage.
-- **Quality checks:** backend test suite, live PostgreSQL migration/schema verification, frontend unit tests, production build, and source-only release archive validation.
+## What it does
 
-## Architecture
+- **Explore repositories:** inspect a public GitHub repository, browse directories and files, and select a branch.
+- **Index a snapshot:** fetch bounded, allowlisted text files from a specific commit; split source into deterministic overlapping chunks and retain file paths, line ranges, and content hashes.
+- **Search code:** run PostgreSQL full-text keyword search, pgvector cosine-similarity search, or hybrid retrieval with Reciprocal Rank Fusion (RRF).
+- **Ask codebase questions:** retrieve relevant chunks and pass bounded source context to an OpenAI-compatible chat provider. Answers carry source citations linked to the original code.
+- **Keep workspaces:** save repositories, indexing/embedding job states, and chat conversations in PostgreSQL, scoped to the authenticated user.
+- **Evaluate retrieval:** measure Recall@k, MRR, nDCG@k, citation validity, citation support precision, and coverage using an offline evaluation dataset.
 
-```text
-React + Vite + Tailwind CSS (JavaScript / JSX)
-                 |
-                 | REST API (/api/v1)
-                 v
-          FastAPI application
-       /          |           \
- Auth/JWT   GitHub API     RAG services
-                  |       /      |      \
-             Public repo  Index  Search  LLM
-                          |      |
-                          v      v
-                    PostgreSQL + pgvector
-                   migrations / persistent data
+RepoLens indexes source text for analysis. It does **not** execute repository code or train a model.
+
+## How it works
+
+```mermaid
+flowchart TB
+    U[Developer] --> FE[React + Vite workspace]
+    FE -->|REST /api/v1| API[FastAPI application]
+    API --> AUTH[JWT authentication and owner-scoped access]
+    API --> GH[GitHub public API]
+    GH --> ING[Repository ingestion]
+    ING --> SAFE[File allowlist and size/count limits]
+    SAFE --> CHUNK[Deterministic overlapping chunks]
+    CHUNK --> META[(PostgreSQL metadata and source chunks)]
+    CHUNK --> EMB[Optional embedding generation]
+    EMB --> VEC[(pgvector embeddings)]
+    FE --> SEARCH[Code search]
+    SEARCH --> KW[PostgreSQL full-text search]
+    SEARCH --> SEM[Vector similarity search]
+    KW --> FUSION[Reciprocal Rank Fusion]
+    SEM --> FUSION
+    FUSION --> RESULTS[Ranked chunks with file and line references]
+    FE --> CHAT[RAG chat]
+    RESULTS --> CHAT
+    CHAT --> LLM[OpenAI-compatible / OpenRouter chat API]
+    LLM --> ANSWER[Answer with validated source labels]
+    ANSWER --> HISTORY[(PostgreSQL conversations and citations)]
+    HISTORY --> FE
 ```
 
-### Technology stack
+### Main processing stages
 
-| Layer | Technologies |
+1. **Connect:** the backend validates a GitHub repository URL and retrieves public repository metadata and branches.
+2. **Select a snapshot:** the chosen branch is resolved to a commit SHA. Indexing records that commit so results remain attributable to a known source version.
+3. **Ingest safely:** the GitHub integration reads only supported, allowlisted text files within configured limits. Source is never run.
+4. **Chunk and persist:** source is divided into deterministic overlapping chunks with file path, line range, and content hash metadata.
+5. **Embed when configured:** an embedding provider converts chunks to vectors. Keyword search does not depend on embeddings.
+6. **Retrieve:** keyword and semantic rankings can be combined with Reciprocal Rank Fusion. Results are scoped to the current owner, repository, commit, and active embedding configuration.
+7. **Generate a grounded answer:** RAG chat receives bounded retrieved source context and selected conversation history. It is instructed to treat code/comments as untrusted evidence and cite supplied source labels.
+8. **Save the conversation:** user messages, assistant responses, and source-citation metadata are stored for later review.
+
+## Features
+
+### Repository workspace
+
+- Inspect a public GitHub repository from its URL.
+- Save repositories to the signed-in user's workspace.
+- Browse public repository directory contents.
+- List branches and select the branch snapshot to index.
+- View indexing and embedding job progress.
+
+### Source indexing
+
+- Commit-specific source snapshots.
+- Allowlisted text-file ingestion with bounded processing.
+- Deterministic chunking with overlap.
+- File paths, source line ranges, and content hashes retained with chunks.
+- Source-only processing; repository code is never executed.
+
+### Code search
+
+| Mode | Behavior | Configuration |
+|---|---|---|
+| Keyword | PostgreSQL full-text search | Works after source indexing; no embedding key required |
+| Semantic | pgvector cosine-similarity retrieval | Requires embeddings for the selected snapshot |
+| Hybrid | Combines keyword and semantic rankings using RRF | Requires compatible embeddings for the selected snapshot |
+
+Search results include ranked source snippets and repository/file/line context so developers can inspect the original code.
+
+### RepoLens AI chat
+
+- Ask questions about the currently indexed repository snapshot.
+- Retrieve relevant source chunks before generating an answer.
+- Include bounded context and recent conversation history.
+- Return source citations with file and line links.
+- Save conversations and citation metadata in PostgreSQL.
+- Return a deterministic no-evidence response when retrieval finds no relevant source.
+- Validate citation labels and mark unknown labels as unavailable rather than silently mapping them to a source.
+
+The LLM is used to explain retrieved code; it is not used to fabricate repository contents. Generated answers can still be wrong, so verify important statements against their citations.
+
+### Retrieval evaluation
+
+The offline evaluation utility supports:
+
+- Recall@k
+- Mean Reciprocal Rank (MRR)
+- nDCG@k
+- Citation validity
+- Citation support precision
+- Citation coverage
+- Unknown citation reporting and per-query results
+
+Evaluation input uses JSONL records containing queries, human-labelled relevant chunks, retrieved chunk IDs, known source labels, cited labels, and human-reviewed supporting labels. The checked-in sample is illustrative, not a real quality benchmark.
+
+## Technology stack
+
+| Area | Technologies |
 |---|---|
-| Frontend | React, Vite, JavaScript/JSX, Tailwind CSS, Vitest |
-| Backend | Python, FastAPI, Pydantic Settings, SQLAlchemy 2, Alembic |
-| Data | PostgreSQL 16+, pgvector, PostgreSQL full-text search |
-| Retrieval and AI | Source chunking, vector embeddings, hybrid retrieval, reciprocal-rank fusion, RAG chat, OpenRouter-compatible APIs |
-| Identity and security | Argon2 password hashing, signed JWT access tokens, owner-scoped database queries, security headers, trusted-host configuration |
-| Testing and delivery | pytest, Vitest, production frontend build, GitHub Actions CI, source release ZIP validation |
+| Frontend | React, Vite, JavaScript / JSX, Tailwind CSS |
+| Frontend testing | Vitest |
+| Backend API | Python, FastAPI, Pydantic Settings |
+| Data access | SQLAlchemy 2 |
+| Database migrations | Alembic |
+| Database | PostgreSQL 16+, pgvector, PostgreSQL full-text search |
+| Retrieval | Deterministic source chunking, vector cosine similarity, RRF |
+| LLM integration | OpenAI-compatible API, OpenRouter configuration |
+| Authentication | Argon2 password hashing, signed JWT access tokens |
+| Backend testing | pytest |
+| CI | GitHub Actions |
 
-RepoLens does not use Docker for local setup, does not train a model, and currently supports public GitHub repositories only.
+## Project structure
 
-## Features and workflow
+The tree below shows the main source areas and their responsibilities.
 
-1. Register or sign in.
-2. Connect a public GitHub repository by URL.
-3. Browse files and folders and select a branch.
-4. Index bounded source files from a specific commit snapshot.
-5. Generate embeddings when an embedding provider is configured.
-6. Run keyword, semantic, or hybrid code search.
-7. Ask RepoLens a question about the codebase; retrieved context and citations are saved in the workspace.
-8. Review prior conversations and run the offline retrieval/citation evaluation harness.
+```text
+RepoLens/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── routes/             # Versioned REST endpoints
+│   │   │   ├── schemas/            # Request and response schemas
+│   │   │   ├── dependencies.py     # Shared API dependencies
+│   │   │   └── router.py           # API route composition
+│   │   ├── core/                   # Settings and security configuration
+│   │   ├── db/                     # SQLAlchemy session and schema checks
+│   │   ├── evaluation/             # Retrieval and citation evaluation
+│   │   ├── models/                 # User, repository, chunks, jobs and chat models
+│   │   ├── services/               # GitHub, indexing, embeddings, retrieval and chat
+│   │   └── main.py                 # FastAPI application entry point
+│   ├── evaluation/
+│   │   └── examples/               # Example JSONL evaluation input
+│   ├── migrations/                 # Alembic revisions
+│   ├── tests/                      # Backend unit and integration tests
+│   ├── .env.example                # Backend configuration template
+│   ├── alembic.ini
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/             # Reusable interface components
+│   │   ├── pages/                  # Workspace and code explorer pages
+│   │   ├── lib/                    # API client and GitHub URL helpers
+│   │   └── styles.css              # Global application styles
+│   ├── .env.example                # Frontend configuration template
+│   ├── package.json
+│   ├── tailwind.config.js
+│   ├── vite.config.js
+│   └── vitest.config.js
+├── docs/                           # Architecture, implementation and phase notes
+├── scripts/
+│   └── package_release.py          # Source archive builder and validator
+├── .github/
+│   └── workflows/                  # CI workflow
+├── SECURITY.md
+└── README.md
+```
 
-Keyword search can be used without an embedding or LLM API key. Semantic/hybrid search requires generated embeddings. AI chat requires a configured LLM provider and can incur provider costs.
+## Data model
 
-## Requirements
+PostgreSQL is the persistent workspace store. The main entities include:
+
+| Entity | Purpose |
+|---|---|
+| User | Account identity, password hash, and ownership boundary |
+| Repository | Saved public repository, owner, selected branch, and indexed commit metadata |
+| Indexing job | Source indexing state, counts, errors, and snapshot information |
+| Repository chunk | Source text, file path, line range, content hash, and commit association |
+| Chunk embedding | Vector representation plus provider/model/dimension metadata |
+| Chat conversation | Conversation associated with an authenticated user and saved repository |
+| Chat message | User/assistant message, timestamp, and stored citation metadata |
+
+Migrations are managed with Alembic. The pgvector extension must be installed on the PostgreSQL server and enabled in the RepoLens database before applying migrations that create vector storage.
+
+## API overview
+
+All application routes are versioned under `/api/v1`. The development API schema is available at `/docs`.
+
+| Area | Endpoint | Purpose |
+|---|---|---|
+| Health | `GET /health/live`, `GET /health/ready` | Liveness and database readiness |
+| Authentication | `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | Account and session operations |
+| Repository | `POST /repositories/inspect` | Inspect a public GitHub repository |
+| Saved workspace | `POST /repositories/saved`, `GET /repositories/saved`, `DELETE /repositories/saved/{repository_id}` | Save and manage owned repositories |
+| Branches | `GET /repositories/saved/{repository_id}/branches`, `PATCH /repositories/saved/{repository_id}/branch` | List and select branches |
+| Indexing | `POST /repositories/saved/{repository_id}/index`, `GET /repositories/saved/{repository_id}/jobs/{job_id}` | Queue and inspect source indexing |
+| Embeddings | `POST /repositories/saved/{repository_id}/embeddings` | Generate configured embeddings |
+| Search | `POST /repositories/saved/{repository_id}/search` | Keyword, semantic, or hybrid search |
+| Chat | `POST /repositories/saved/{repository_id}/chat` | Ask a repository-grounded question |
+| Conversations | `GET /repositories/saved/{repository_id}/conversations`, `GET /repositories/saved/{repository_id}/conversations/{conversation_id}` | Read saved conversation history |
+| Public contents | `GET /repositories/{owner}/{repository}/contents` | Browse public repository contents |
+
+Protected workspace operations require authentication and verify resource ownership. The OpenAPI schema in the running backend provides exact request and response fields.
+
+## Local development
+
+### Prerequisites
 
 - Python 3.12 or newer
 - Node.js 22.12 or newer and npm
 - PostgreSQL 16 or newer
-- The PostgreSQL vector extension (pgvector)
+- pgvector installed for the PostgreSQL server version
 - Git
 
-VS Code is recommended for local development.
+RepoLens currently uses a local Python/PostgreSQL setup; Docker is not required.
 
-## Local setup (Windows PowerShell)
+### 1. Clone the repository
 
-### 1. Create the PostgreSQL database
+```bash
+git clone https://github.com/digvijay1129/RepoLens.git
+cd RepoLens
+```
 
-Open pgAdmin or psql as a local PostgreSQL administrator and run the following, changing the password to a strong local-only value:
+### 2. Create the database
+
+Connect to PostgreSQL as an administrator and create a local application user and database. Replace the example password with a strong local-only value.
 
 ```sql
 CREATE USER repolens_user WITH PASSWORD 'replace_with_a_strong_local_password';
 CREATE DATABASE repolens OWNER repolens_user;
 ```
 
-Install the pgvector extension for your PostgreSQL installation and ensure it is available to the database. Then enable it:
+Install the pgvector server extension compatible with your PostgreSQL installation, connect to the new database, and enable it:
 
 ```sql
-\c repolens
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-Skip the user/database creation if they already exist. Do not use production credentials for local development.
+### 3. Configure and run the backend
 
-### 2. Configure and start the backend
-
-From the repository root:
+From the repository root, using Windows PowerShell:
 
 ```powershell
 cd backend
@@ -101,13 +255,16 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit backend/.env and set DATABASE_URL. Generate a private JWT signing secret:
+Edit `backend/.env` and configure at minimum:
+
+- `DATABASE_URL` — connection string for the local RepoLens PostgreSQL database.
+- `JWT_SECRET_KEY` — unique random signing secret of at least 32 bytes.
+
+Generate a local JWT secret:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
-
-Set the generated value as JWT_SECRET_KEY (minimum 32 bytes). Keep backend/.env private and never commit it.
 
 Apply and verify database migrations:
 
@@ -123,11 +280,14 @@ Start the API:
 uvicorn app.main:app --reload
 ```
 
-- API documentation: http://127.0.0.1:8000/docs
-- Liveness: http://127.0.0.1:8000/api/v1/health/live
-- Readiness: http://127.0.0.1:8000/api/v1/health/ready
+Backend development URLs:
 
-### 3. Configure and start the frontend
+- API: `http://127.0.0.1:8000`
+- OpenAPI docs: `http://127.0.0.1:8000/docs`
+- Liveness: `http://127.0.0.1:8000/api/v1/health/live`
+- Readiness: `http://127.0.0.1:8000/api/v1/health/ready`
+
+### 4. Configure and run the frontend
 
 Open a second terminal at the repository root:
 
@@ -140,65 +300,41 @@ npm run build
 npm run dev
 ```
 
-Open the local URL printed by Vite (usually http://localhost:5173). The frontend API base URL defaults to http://127.0.0.1:8000 and can be overridden with VITE_API_BASE_URL.
+The frontend API base URL defaults to `http://127.0.0.1:8000`. Override it with `VITE_API_BASE_URL` in `frontend/.env` when your backend uses another origin. Open the local URL printed by Vite (normally `http://localhost:5173`).
 
-## Optional AI provider configuration
+### 5. Configure optional AI services
 
-To enable OpenRouter chat, set the following in backend/.env:
+LLM chat and embedding generation are optional. The backend uses OpenRouter-compatible configuration in `backend/.env`:
 
 ```dotenv
-OPENROUTER_API_KEY=your_private_key
+OPENROUTER_API_KEY=your_private_api_key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_CHAT_MODEL=openai/gpt-5.6-luna
-OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+OPENROUTER_CHAT_MODEL=your_supported_chat_model
+OPENROUTER_EMBEDDING_MODEL=your_supported_embedding_model
 OPENROUTER_HTTP_REFERER=http://localhost:5173
 OPENROUTER_APP_TITLE=RepoLens
+
 LLM_ENABLED=true
 EMBEDDINGS_ENABLED=true
 EMBEDDINGS_DIMENSIONS=1536
 ```
 
-Configure the embedding provider values to match the embedding API you intend to use. Keep every API key in backend-only environment variables—never put it in frontend/.env or commit it. Set EMBEDDINGS_ENABLED=true only when generating embeddings; source indexing and keyword retrieval do not require embeddings. Provider calls may incur costs, and code excerpts retrieved for chat are sent to the configured provider.
+Use model identifiers supported by your selected provider and ensure the embedding dimensions match the configured vector column. The values above are configuration examples; check the provider's current model catalog before use.
 
-The checked-in backend/.env.example documents the supported local settings and defaults. Change model identifiers only to models supported by your selected provider.
+- **Keyword search:** does not need an embedding provider.
+- **Semantic/hybrid search:** requires embeddings generated with the active provider, model, and dimensions.
+- **RAG chat:** requires an enabled chat provider. Chat can use keyword retrieval when embeddings are disabled.
 
-## API overview
+Keep provider keys in backend-only environment variables. Do not put secrets in `VITE_*` variables or commit `.env` files. Provider calls may incur costs. Retrieved code excerpts and bounded chat history are sent to the configured model provider; only index code you are authorized to share and review the provider's privacy and retention terms.
 
-Routes are versioned under /api/v1. Use the automatically generated API docs in development for request and response schemas.
+## Testing and evaluation
 
-### Health
-- GET /api/v1/health/live
-- GET /api/v1/health/ready
-
-### Authentication
-- POST /api/v1/auth/register
-- POST /api/v1/auth/login
-- GET /api/v1/auth/me (bearer token required)
-
-### Repository workspace and code intelligence
-- POST /api/v1/repositories/inspect — preview public repository metadata
-- POST /api/v1/repositories/saved — save a repository to the current user's workspace
-- GET /api/v1/repositories/saved — list the current user's repositories
-- DELETE /api/v1/repositories/saved/{repository_id} — remove an owned repository
-- GET /api/v1/repositories/saved/{repository_id}/branches — list branches
-- PATCH /api/v1/repositories/saved/{repository_id}/branch — set the selected branch
-- POST /api/v1/repositories/saved/{repository_id}/index — queue source indexing
-- GET /api/v1/repositories/saved/{repository_id}/jobs/{job_id} — inspect indexing/embedding progress
-- POST /api/v1/repositories/saved/{repository_id}/embeddings — generate configured embeddings
-- POST /api/v1/repositories/saved/{repository_id}/search — keyword, semantic, or hybrid search
-- POST /api/v1/repositories/saved/{repository_id}/chat — ask a grounded codebase question
-- GET /api/v1/repositories/saved/{repository_id}/conversations and GET /api/v1/repositories/saved/{repository_id}/conversations/{conversation_id} — saved chat history
-- GET /api/v1/repositories/{owner}/{repository}/contents — browse public directory contents with optional path and ref
-
-Workspace data access is scoped to the authenticated user; consult /docs for request/response schemas and exact validation rules.
-
-## Tests and CI
-
-Run backend tests from an activated backend environment:
+Run backend checks from an activated backend environment:
 
 ```powershell
 cd backend
 pytest
+python -m app.db.schema_check
 ```
 
 Run frontend checks:
@@ -209,53 +345,39 @@ npm test
 npm run build
 ```
 
-GitHub Actions installs PostgreSQL and pgvector directly on a disposable GitHub-hosted runner (without Docker), applies the Alembic migrations, runs backend tests and the live schema checks, and then runs frontend tests and a production build. When both suites pass, CI builds and validates a source-only release ZIP. The PostgreSQL setup temporarily disables an unrelated Microsoft apt feed that otherwise returns HTTP 403 on affected runner images.
-
-## Repository layout
-
-```text
-.github/workflows/ci.yml        Continuous integration and release validation
-backend/app/api/                Versioned REST API and request schemas
-backend/app/core/               Application configuration and security settings
-backend/app/db/                 Database session, metadata, and schema checker
-backend/app/models/             SQLAlchemy data models
-backend/app/services/           GitHub, indexing, embeddings, retrieval and RAG services
-backend/app/evaluation/         Offline retrieval/citation evaluation
-backend/migrations/             Versioned Alembic migrations
-backend/tests/                  Backend unit and integration tests
-frontend/src/components/        Reusable UI components
-frontend/src/pages/              Workspace pages
-frontend/src/lib/                API client and GitHub URL helpers
-frontend/src/styles.css          Application styles
-docs/                            Phase notes and deployment/security documentation
-scripts/package_release.py       Source-only ZIP builder and validator
-```
-
-## Security and limitations
-
-- Passwords are hashed with Argon2; plaintext passwords are not stored.
-- Signed JWT access tokens use issuer, audience, and expiry claims. The browser stores the token in sessionStorage for the current tab/session.
-- Saved repository operations are scoped to the signed-in user's ID.
-- Input repository URLs are restricted to HTTPS on the exact GitHub host; server-side public API calls use the fixed GitHub API origin.
-- Only public repositories are supported; private-repository access and GitHub OAuth are not implemented.
-- Source ingestion is bounded and uses allowlisted text-file handling; indexed code is not executed.
-- Do not commit .env files, credentials, private code, or real user data.
-
-Before public deployment, complete a security review and add production operations such as rate limiting, email verification and account recovery, secret management, monitoring, backups, TLS, and an appropriate deployment plan. Read [SECURITY.md](SECURITY.md) and [Phase 8 deployment notes](docs/PHASE_8.md).
-
-## Retrieval evaluation
-
-The example file backend/evaluation/examples/openrouter_rag_run.jsonl illustrates the expected JSONL input format with synthetic sample data. From backend/, run:
+Run the offline retrieval evaluation from `backend/`:
 
 ```powershell
 python -m app.evaluation.evaluate --input evaluation/examples/openrouter_rag_run.jsonl --k 5 --output evaluation/report.json
 ```
 
-The evaluation report includes Recall@k, MRR, nDCG@k, citation validity, support precision, and coverage. The sample is illustrative only; measure real performance with representative queries and human-reviewed relevance and citation labels.
+The checked-in JSONL input is illustrative. For meaningful evaluation, use representative queries and human-reviewed relevant chunks and citation-support labels.
 
-## Project documentation
+## Security and scope
 
-- [Phase 1 — Foundation](docs/PHASE_1.md)
+- Passwords are hashed with Argon2; plaintext passwords are not stored.
+- Access uses signed JWT tokens with issuer, audience, and expiry claims.
+- Saved repositories, indexing jobs, conversations, and workspace operations are scoped to the authenticated user.
+- Repository URLs are restricted to HTTPS on the GitHub host; backend GitHub API requests use the fixed GitHub API origin.
+- Source indexing is bounded and allowlisted; repository code is not executed.
+- Retrieved source and conversation text are treated as untrusted context in RAG prompts.
+- OpenRouter credentials stay on the backend and should never be exposed to the browser.
+
+Current scope limitations:
+
+- Only public GitHub repositories are supported; private repository OAuth/access is not implemented.
+- No repository code execution, Docker workflow, or TypeScript application is included.
+- Chat and embeddings depend on external provider configuration and availability.
+- Citation grounding improves traceability but does not guarantee that generated answers are always correct.
+- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
+
+See [SECURITY.md](SECURITY.md) for the project security policy.
+
+## Related technical documentation
+
+Detailed implementation notes are maintained in `docs/`:
+
+- [Phase 1 — Project foundation](docs/PHASE_1.md)
 - [Phase 1B — Frontend and URL validation](docs/PHASE_1B.md)
 - [Phase 2A — Database foundation](docs/PHASE_2A.md)
 - [Phase 2B — Live database and schema verification](docs/PHASE_2B.md)
@@ -263,11 +385,7 @@ The evaluation report includes Recall@k, MRR, nDCG@k, citation validity, support
 - [Phase 3B — Authentication and saved repositories](docs/PHASE_3B.md)
 - [Phase 4A — Source indexing](docs/PHASE_4A.md)
 - [Phase 4B — Embeddings](docs/PHASE_4B.md)
-- [Phase 5 — Retrieval and citations](docs/PHASE_5.md)
-- [Phase 6 — RAG chat and history](docs/PHASE_6.md)
-- [Phase 7 — Provider integration and evaluation](docs/PHASE_7.md)
-- [Phase 8 — Deployment and security](docs/PHASE_8.md)
-
-## Current status
-
-RepoLens implements the capabilities described above and includes automated tests and CI checks. Passing tests and schema validation are a useful baseline, not proof of production readiness. Validate the full setup with your own database and provider configuration before relying on it in a deployed environment.
+- [Phase 5 — Hybrid retrieval and citations](docs/PHASE_5.md)
+- [Phase 6 — RAG chat and conversation history](docs/PHASE_6.md)
+- [Phase 7 — OpenRouter integration and evaluation](docs/PHASE_7.md)
+- [Phase 8 — Deployment preparation and security](docs/PHASE_8.md)
