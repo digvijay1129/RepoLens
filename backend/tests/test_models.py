@@ -30,9 +30,19 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
 
-    assert set(inspector.get_table_names()) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings", "chat_conversations", "chat_messages"}
+    assert set(inspector.get_table_names()) == {
+        "users", "repositories", "indexing_jobs", "repository_chunks",
+        "repository_chunk_embeddings", "chat_conversations", "chat_messages",
+        "agent_tasks", "agent_plans", "agent_steps",
+    }
     assert "uq_repositories_user_full_name" in {
         constraint["name"] for constraint in inspector.get_unique_constraints("repositories")
+    }
+    assert {"uq_agent_tasks_id_user_repository"} <= {
+        constraint["name"] for constraint in inspector.get_unique_constraints("agent_tasks")
+    }
+    assert {"uq_agent_plans_id_task_user", "uq_agent_plans_task_version"} <= {
+        constraint["name"] for constraint in inspector.get_unique_constraints("agent_plans")
     }
     assert {index["name"] for index in inspector.get_indexes("indexing_jobs")} == {
         "ix_indexing_jobs_repository_created",
@@ -44,6 +54,11 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     }
     assert {index["name"] for index in inspector.get_indexes("repository_chunk_embeddings")} == {
         "ix_chunk_embeddings_user_repo_commit_model",
+    }
+    assert {index["name"] for index in inspector.get_indexes("agent_tasks")} == {
+        "ix_agent_tasks_user_created",
+        "ix_agent_tasks_repository_created",
+        "ix_agent_tasks_user_status",
     }
     engine.dispose()
 
