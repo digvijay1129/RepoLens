@@ -130,6 +130,12 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "tool_name", "status", "tool_input", "tool_output", "error_message",
         "duration_ms", "created_at", "finished_at",
     },
+    "agent_memories": {
+        "id", "user_id", "repository_id", "task_id", "source_execution_id",
+        "memory_type", "origin", "title", "content", "tags", "source_refs",
+        "source_commit_sha", "content_hash", "confidence", "importance", "is_active",
+        "access_count", "last_accessed_at", "expires_at", "created_at", "updated_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -280,6 +286,30 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "indexes": {
             "ix_agent_tool_executions_task_created",
             "ix_agent_tool_executions_user_created",
+        },
+    },
+    "agent_memories": {
+        "primary": {"pk_agent_memories"},
+        "unique": {"uq_agent_memories_user_repo_hash"},
+        "check": {
+            "ck_agent_memories_memory_type_allowed",
+            "ck_agent_memories_origin_allowed",
+            "ck_agent_memories_importance_valid",
+            "ck_agent_memories_confidence_valid",
+            "ck_agent_memories_title_length_valid",
+            "ck_agent_memories_content_length_valid",
+            "ck_agent_memories_access_count_nonnegative",
+        },
+        "foreign": {
+            "fk_agent_memories_user_id_users",
+            "fk_agent_memories_repository_owner",
+            "fk_agent_memories_task_owner",
+            "fk_agent_memories_source_execution",
+        },
+        "indexes": {
+            "ix_agent_memories_user_repo_active",
+            "ix_agent_memories_repo_commit",
+            "ix_agent_memories_repo_updated",
         },
     },
 }
