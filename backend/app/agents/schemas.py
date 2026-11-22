@@ -161,7 +161,7 @@ class AgentToolExecutionResponse(BaseModel):
     task_id: UUID
     step_id: UUID
     tool_name: str
-    status: Literal["running", "succeeded", "failed"]
+    status: Literal["running", "awaiting_approval", "succeeded", "failed"]
     tool_input: dict
     tool_output: dict | None = None
     error_message: str | None = None
