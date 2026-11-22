@@ -137,9 +137,6 @@ async def execute_agent_step(
         AgentTaskStatus.RUNNING.value,
     }:
         raise AgentExecutionConflictError("Only planned or running tasks can execute an individual step.")
-    if task.total_tool_calls >= task.max_tool_calls and task.approval_mode != "approve_each":
-        raise AgentExecutionConflictError("The task has reached its maximum tool-call budget.")
-
     repository = db.scalar(
         select(Repository).where(
             Repository.id == task.repository_id,
@@ -248,6 +245,8 @@ async def execute_agent_step(
     )
 
     approved_action = approval is not None
+    if not approved_action and task.total_tool_calls >= task.max_tool_calls:
+        raise AgentExecutionConflictError("The task has reached its maximum tool-call budget.")
     if approved_action:
         expires_at = approval.expires_at
         if expires_at.tzinfo is None:
