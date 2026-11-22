@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, ChevronDown, Code2, Github, LayoutDashboard, LifeBuoy, MessageSquareText, Settings2, Sparkles, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, Code2, Github, LayoutDashboard, LifeBuoy, MessageSquareText, Settings2, Sparkles, Workflow, X } from "lucide-react";
 import BrandMark from "../common/BrandMark.jsx";
 
 const navigation = [
@@ -6,6 +6,7 @@ const navigation = [
   { id: "repositories", label: "Repositories", icon: Github },
   { id: "explorer", label: "Code explorer", icon: Code2 },
   { id: "conversations", label: "AI chat", icon: MessageSquareText },
+  { id: "agents", label: "Agent workspace", icon: Workflow },
 ];
 
 export default function Sidebar({ active, onNavigate, onConnect, mobileOpen, onClose, currentUser, collapsed = false }) {
