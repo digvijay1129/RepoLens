@@ -37,6 +37,11 @@ from app.agents.schemas import (
     AgentStepExecutionRequest,
     AgentTaskStatus,
 )
+from app.agents.team_service import (
+    AgentTeamNotFoundError,
+    get_task_team,
+    list_task_delegations,
+)
 from app.agents.tools import AgentToolError
 from app.agents.service import (
     AgentRepositoryNotReadyError,
@@ -384,3 +389,34 @@ def remove_memory(
     except AgentMemoryNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+
+@router.get(
+    "/tasks/{task_id}/team",
+    summary="Inspect the coordinator, specialist assignments and team progress",
+)
+def get_agent_team(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return get_task_team(db, task_id=task_id, user_id=current_user.id)
+    except AgentTeamNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/tasks/{task_id}/delegations",
+    summary="List the authenticated owner's specialist delegation history",
+)
+def get_agent_delegations(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> list[dict]:
+    try:
+        return list_task_delegations(db, task_id=task_id, user_id=current_user.id)
+    except AgentTeamNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
