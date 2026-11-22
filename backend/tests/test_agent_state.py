@@ -43,3 +43,27 @@ def test_queued_task_cannot_skip_planning():
     state = make_state()
     with pytest.raises(InvalidAgentStateTransition):
         state.transition_to(AgentTaskStatus.RUNNING)
+
+
+
+def test_running_task_can_pause_and_resume():
+    state = make_state(AgentTaskStatus.RUNNING)
+    state.current_step_key = "review_auth"
+    state.transition_to(AgentTaskStatus.PAUSED)
+    assert state.status is AgentTaskStatus.PAUSED
+    assert state.current_step_key == "review_auth"
+
+    state.transition_to(AgentTaskStatus.RUNNING)
+    assert state.status is AgentTaskStatus.RUNNING
+
+
+def test_running_task_can_be_cancelled():
+    state = make_state(AgentTaskStatus.RUNNING)
+    state.transition_to(AgentTaskStatus.CANCELLED)
+    assert state.status is AgentTaskStatus.CANCELLED
+
+
+def test_terminal_failed_task_cannot_be_resumed():
+    state = make_state(AgentTaskStatus.FAILED)
+    with pytest.raises(InvalidAgentStateTransition):
+        state.transition_to(AgentTaskStatus.RUNNING)
