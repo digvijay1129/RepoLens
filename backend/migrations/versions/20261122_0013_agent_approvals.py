@@ -47,6 +47,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("repository_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("delegation_id", sa.Uuid(as_uuid=True), nullable=True),
+        sa.Column("proposed_execution_id", sa.Uuid(as_uuid=True), nullable=True),
         sa.Column("executed_execution_id", sa.Uuid(as_uuid=True), nullable=True),
         sa.Column("approval_mode", sa.String(length=20), server_default="approve_each", nullable=False),
         sa.Column("tool_name", sa.String(length=80), nullable=False),
@@ -101,6 +102,12 @@ def upgrade() -> None:
             ["delegation_id"],
             ["agent_delegations.id"],
             name="fk_agent_approval_requests_delegation",
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["proposed_execution_id"],
+            ["agent_tool_executions.id"],
+            name="fk_agent_approval_requests_proposed_execution",
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
