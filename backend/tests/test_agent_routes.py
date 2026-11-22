@@ -510,3 +510,214 @@ def test_failed_tool_call_is_logged_and_step_can_be_retried(
     assert len(history.json()) == 1
     assert history.json()[0]["status"] == "failed"
     assert history.json()[0]["error_message"]
+
+
+
+def _create_agent_task_for_run(client: TestClient, headers: dict) -> str:
+    repository = create_saved_repository(client, headers)
+    mark_repository_indexed(client, repository["id"])
+    created = client.post(
+        "/api/v1/agents/tasks",
+        headers=headers,
+        json={
+            "repository_id": repository["id"],
+            "goal": "Inspect repository metadata and review authentication.",
+            "max_steps": 5,
+        },
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["id"]
+
+
+def test_autonomous_run_executes_dependencies_and_builds_final_result(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-autonomous-owner@example.com")
+    task_id = _create_agent_task_for_run(agent_client, account["headers"])
+    selection_calls = []
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+        selection_calls.append({
+            "step_key": step.step_key,
+            "observations": observations or [],
+        })
+        if step.step_key == "find_auth":
+            return LLMFunctionCall(
+                call_id="auto-call-1",
+                name="repository_overview",
+                arguments={},
+            )
+        return LLMFunctionCall(
+            call_id="auto-call-2",
+            name="list_indexed_files",
+            arguments={"limit": 10},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    response = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=account["headers"],
+        json={
+            "max_tool_calls": 4,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    task = response.json()
+    assert task["status"] == "completed"
+    assert task["total_tool_calls"] == 2
+    assert task["total_retries"] == 0
+    assert [step["status"] for step in task["steps"]] == ["succeeded", "succeeded"]
+    assert task["final_result"]["execution"]["status"] == "completed"
+    assert len(task["final_result"]["completed_steps"]) == 2
+    assert selection_calls[0]["step_key"] == "find_auth"
+    assert selection_calls[1]["step_key"] == "review_tokens"
+    assert selection_calls[1]["observations"][0]["tool_name"] == "repository_overview"
+
+
+def test_autonomous_run_pauses_at_budget_and_resumes_without_repeating_success(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-resume-owner@example.com")
+    task_id = _create_agent_task_for_run(agent_client, account["headers"])
+    selected_steps = []
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+        selected_steps.append(step.step_key)
+        return LLMFunctionCall(
+            call_id=f"resume-{len(selected_steps)}",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    paused = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=account["headers"],
+        json={
+            "max_tool_calls": 1,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["status"] == "paused"
+    assert paused.json()["total_tool_calls"] == 1
+    assert paused.json()["steps"][0]["status"] == "succeeded"
+    assert paused.json()["steps"][1]["status"] == "pending"
+
+    completed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/resume",
+        headers=account["headers"],
+        json={
+            "max_tool_calls": 3,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["total_tool_calls"] == 2
+    assert selected_steps == ["find_auth", "review_tokens"]
+
+
+def test_autonomous_run_retries_failed_tool_within_budget(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-retry-owner@example.com")
+    task_id = _create_agent_task_for_run(agent_client, account["headers"])
+    calls = {"count": 0}
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return LLMFunctionCall(
+                call_id="retry-invalid-tool",
+                name="execute_shell",
+                arguments={"command": "unsafe"},
+            )
+        return LLMFunctionCall(
+            call_id=f"retry-valid-{calls['count']}",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    response = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=account["headers"],
+        json={
+            "max_tool_calls": 4,
+            "max_retries_per_step": 1,
+            "max_runtime_seconds": 15,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    task = response.json()
+    assert task["status"] == "completed"
+    assert task["total_tool_calls"] == 3
+    assert task["total_retries"] == 1
+    assert calls["count"] == 3
+    assert task["steps"][0]["status"] == "succeeded"
+
+
+def test_autonomous_run_and_cancel_are_owner_scoped(
+    agent_client: TestClient,
+    mocked_planner,
+):
+    owner = create_account(agent_client, "agent-run-isolation-owner@example.com")
+    task_id = _create_agent_task_for_run(agent_client, owner["headers"])
+    other = create_account(agent_client, "agent-run-isolation-other@example.com")
+
+    assert agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=other["headers"],
+        json={},
+    ).status_code == 404
+    assert agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/cancel",
+        headers=other["headers"],
+    ).status_code == 404
+
+
+def test_running_task_can_be_cancelled_and_is_terminal(
+    agent_client: TestClient,
+    mocked_planner,
+):
+    from app.models.agent_task import AgentTask
+
+    account = create_account(agent_client, "agent-running-cancel@example.com")
+    task_id = _create_agent_task_for_run(agent_client, account["headers"])
+    with Session(agent_client.app.state.agent_test_engine) as db:
+        task = db.get(AgentTask, UUID(task_id))
+        task.status = "running"
+        db.commit()
+
+    cancelled = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/cancel",
+        headers=account["headers"],
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    cannot_resume = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/resume",
+        headers=account["headers"],
+        json={},
+    )
+    assert cannot_resume.status_code == 409
