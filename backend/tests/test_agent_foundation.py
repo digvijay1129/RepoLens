@@ -168,3 +168,9 @@ def test_agent_api_routes_are_registered_in_openapi():
     assert "get" in paths["/api/v1/agents/tasks/{task_id}"]
     assert "/api/v1/agents/tasks/{task_id}/cancel" in paths
     assert "post" in paths["/api/v1/agents/tasks/{task_id}/cancel"]
+    assert "/api/v1/agents/repositories/{repository_id}/memories" in paths
+    assert {"get", "post"} <= set(
+        paths["/api/v1/agents/repositories/{repository_id}/memories"]
+    )
+    assert "/api/v1/agents/memories/{memory_id}" in paths
+    assert {"patch", "delete"} <= set(paths["/api/v1/agents/memories/{memory_id}"])
