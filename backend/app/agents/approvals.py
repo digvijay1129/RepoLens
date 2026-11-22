@@ -112,6 +112,35 @@ def list_task_approvals(
     return [serialize_approval(item) for item in requests]
 
 
+
+
+def _invalidate_approval(
+    db: Session,
+    approval: AgentApprovalRequest,
+    task: AgentTask,
+    reason: str,
+) -> None:
+    now = datetime.now(timezone.utc)
+    approval.status = "expired"
+    approval.decided_at = now
+    approval.decision_comment = reason[:1000]
+    task.status = "failed"
+    task.latest_error = reason[:1000]
+    task.execution_finished_at = now
+    if approval.proposed_execution_id:
+        proposed = db.get(AgentToolExecution, approval.proposed_execution_id)
+        if proposed is not None and proposed.status == "awaiting_approval":
+            proposed.status = "failed"
+            proposed.error_message = reason[:1000]
+            proposed.finished_at = now
+    if approval.delegation_id:
+        delegation = db.get(AgentDelegation, approval.delegation_id)
+        if delegation is not None and delegation.status in {"assigned", "running"}:
+            delegation.status = "cancelled"
+            delegation.error_message = reason[:1000]
+            delegation.finished_at = now
+    db.commit()
+
 def _validate_proposal_still_safe(
     db: Session,
     approval: AgentApprovalRequest,
@@ -128,9 +157,11 @@ def _validate_proposal_still_safe(
         or repository.indexing_status != "indexed"
         or repository.indexed_commit_sha != task.indexed_commit_sha
     ):
-        raise AgentApprovalConflictError(
-            "The indexed repository snapshot changed. This approval cannot authorize an action against a different commit."
+        reason = (
+            "The indexed repository snapshot changed. This approval was invalidated and the task was stopped."
         )
+        _invalidate_approval(db, approval, task, reason)
+        raise AgentApprovalConflictError(reason)
     if approval.status != "pending":
         raise AgentApprovalConflictError(
             f"This approval request is already {approval.status} and cannot be decided again."
@@ -141,26 +172,9 @@ def _validate_proposal_still_safe(
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= datetime.now(timezone.utc):
-        approval.status = "expired"
-        approval.decided_at = datetime.now(timezone.utc)
-        approval.decision_comment = "The approval request expired before a decision was recorded."
-        task.status = "failed"
-        task.latest_error = "A proposed action approval expired. Create a new task to continue."
-        task.execution_finished_at = datetime.now(timezone.utc)
-        if approval.delegation_id:
-            delegation = db.get(AgentDelegation, approval.delegation_id)
-            if delegation is not None:
-                delegation.status = "cancelled"
-                delegation.finished_at = datetime.now(timezone.utc)
-                delegation.error_message = "Approval request expired."
-        if approval.proposed_execution_id:
-            proposed = db.get(AgentToolExecution, approval.proposed_execution_id)
-            if proposed is not None:
-                proposed.status = "failed"
-                proposed.error_message = "Approval request expired before execution."
-                proposed.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        raise AgentApprovalConflictError("The approval request expired. The task has been stopped safely.")
+        reason = "The approval request expired before a decision. The task has been stopped safely."
+        _invalidate_approval(db, approval, task, reason)
+        raise AgentApprovalConflictError(reason)
 
     if task.status != "awaiting_approval":
         raise AgentApprovalConflictError("The task is no longer waiting for this approval.")
@@ -187,10 +201,14 @@ def _validate_proposal_still_safe(
         or stored_input.get("specialist_key") != approval.specialist_key
         or stored_input.get("tool_name") != approval.tool_name
     ):
-        raise AgentApprovalConflictError("The proposed action no longer matches the approval snapshot.")
+        reason = "The proposed action changed after approval was requested. The request was invalidated."
+        _invalidate_approval(db, approval, task, reason)
+        raise AgentApprovalConflictError(reason)
 
     if action_digest(approval.tool_name, approval.tool_arguments or {}) != approval.action_hash:
-        raise AgentApprovalConflictError("The approved action integrity check failed.")
+        reason = "The approved action integrity check failed. The request was invalidated."
+        _invalidate_approval(db, approval, task, reason)
+        raise AgentApprovalConflictError(reason)
 
     try:
         definition = build_agent_tool_registry().get(approval.tool_name)
@@ -245,6 +263,13 @@ def deny_action(
         raise AgentApprovalConflictError(
             f"This approval request is already {approval.status} and cannot be denied."
         )
+    expires_at = approval.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= datetime.now(timezone.utc):
+        reason = "The approval request expired before a decision. The task has been stopped safely."
+        _invalidate_approval(db, approval, task, reason)
+        raise AgentApprovalConflictError(reason)
     now = datetime.now(timezone.utc)
     approval.status = "denied"
     approval.decided_by_user_id = user_id
@@ -282,7 +307,8 @@ def cancel_pending_approvals(
         select(AgentApprovalRequest).where(
             AgentApprovalRequest.task_id == task_id,
             AgentApprovalRequest.user_id == user_id,
-            AgentApprovalRequest.status == "pending",
+            AgentApprovalRequest.status.in_({"pending", "approved"}),
+            AgentApprovalRequest.executed_execution_id.is_(None),
         )
     ).all()
     for approval in pending:
