@@ -8,6 +8,8 @@ from app.agents.schemas import (
     AgentTaskDetail,
     AgentTaskStatus,
     AgentTaskSummary,
+    AgentStepExecutionRequest,
+    AgentToolExecutionResponse,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "AgentTaskDetail",
     "AgentTaskStatus",
     "AgentTaskSummary",
+    "AgentStepExecutionRequest",
+    "AgentToolExecutionResponse",
 ]
