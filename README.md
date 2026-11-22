@@ -101,7 +101,7 @@ Search results include ranked source snippets and repository/file/line context s
 
 The LLM is used to explain retrieved code; it is not used to fabricate repository contents. Generated answers can still be wrong, so verify important statements against their citations.
 
-### Autonomous agent task planning and execution (Phases 1–3)\n\n- Create an authenticated task against a saved, indexed repository.\n- Use the existing OpenAI-compatible / OpenRouter chat provider to generate a structured plan.\n- Validate step count, unique step keys, dependency ordering and suggested tool names before persistence.\n- Persist the repository commit SHA, goal, plan summary, assumptions, completion criteria and ordered steps.\n- List, inspect and cancel queued or planned tasks within the current user's workspace.\n- Enforce ownership with authenticated API dependencies and database composite foreign keys.\n\nPhase 1 creates validated, persisted plans. Phase 2 adds four allowlisted read-only repository tools selected through OpenAI-compatible function calling. Phase 3 adds a bounded Plan → Act → Observe → Decide loop that executes dependency-ready steps, observes prior results, retries within a fixed limit, and can pause, resume or be cancelled. The agent remains read-only.\n\n### Retrieval evaluation
+### Autonomous agent task planning, execution and memory (Phases 1–4)\n\n- Create authenticated tasks and validated dependency-aware plans.\n- Select from four allowlisted read-only repository tools using OpenAI-compatible function calling.\n- Execute multi-step plans with bounded retries, cancellation, pause/resume and durable checkpoints.\n- Persist owner-scoped repository memories, curated architecture notes, conventions and decisions.\n- Capture bounded tool observations with source citations and commit provenance, then retrieve relevant memories for later tasks.\n- Manage repository memories through authenticated create, search, update and delete APIs.\n\nPhase 4 adds a persistent memory layer scoped to each user's saved repository. Relevant memories are ranked and injected as untrusted context before tool selection. Automatic capture stores metadata and citation pointers—not raw source-code excerpts. The agent remains read-only.\n\n### Retrieval evaluation
 
 The offline evaluation utility supports:
 
@@ -191,7 +191,7 @@ PostgreSQL is the persistent workspace store. The main entities include:
 | Chunk embedding | Vector representation plus provider/model/dimension metadata |
 | Chat conversation | Conversation associated with an authenticated user and saved repository |
 | Chat message | User/assistant message, timestamp, and stored citation metadata |\n| Agent task | User goal, repository snapshot, lifecycle status and step budget |\n| Agent plan | Versioned structured plan, provider/model metadata and completion criteria |\n| Agent step | Ordered step description, dependencies, suggested tool and step status |
-| Agent tool execution | Audited function call, validated arguments, structured result/error, duration and timestamps |
+| Agent tool execution | Audited function call, validated arguments, structured result/error, duration and timestamps |\n| Agent memory | Owner-scoped repository notes, decisions, conventions, observations and source provenance |
 
 Migrations are managed with Alembic. The pgvector extension must be installed on the PostgreSQL server and enabled in the RepoLens database before applying migrations that create vector storage.
 
@@ -216,7 +216,7 @@ All application routes are versioned under `/api/v1`. The development API schema
 | Resume run | `POST /agents/tasks/{task_id}/resume` | Resume a paused or stale interrupted task |
 | Agent tool catalog | `GET /agents/tasks/{task_id}/tools` | List available read-only tool schemas |
 | Agent step execution | `POST /agents/tasks/{task_id}/steps/{step_key}/execute` | Select and execute one registered read-only tool for a planned step |
-| Agent tool history | `GET /agents/tasks/{task_id}/tool-executions` | Inspect owner-scoped tool execution records |
+| Agent tool history | `GET /agents/tasks/{task_id}/tool-executions` | Inspect owner-scoped tool execution records |\n| Repository memories | `GET/POST /agents/repositories/{repository_id}/memories` | Search/list or create repository memories |\n| Memory updates | `PATCH/DELETE /agents/memories/{memory_id}` | Edit or permanently delete an owned memory |
 
 Protected workspace operations require authentication and verify resource ownership. The OpenAPI schema in the running backend provides exact request and response fields.
 
@@ -381,7 +381,7 @@ Current scope limitations:
 - No repository code execution, Docker workflow, or TypeScript application is included.
 - Chat and embeddings depend on external provider configuration and availability.
 - Citation grounding improves traceability but does not guarantee that generated answers are always correct.
-- Agent Phase 3 supports bounded, multi-step read-only repository analysis. Filesystem writes, shell execution and remote GitHub mutations remain disabled.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
+- Agent Phase 4 adds owner-scoped persistent repository memory with bounded automatic observations. Memory retrieval is lexical and provenance-aware; automatic capture does not copy raw source excerpts. Filesystem writes, shell execution and remote GitHub mutations remain disabled.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
 
 See [SECURITY.md](SECURITY.md) for the project security policy.
 
@@ -402,4 +402,4 @@ Detailed implementation notes are maintained in `docs/`:
 - [Phase 7 — OpenRouter integration and evaluation](docs/PHASE_7.md)
 - [Phase 8 — Deployment preparation and security](docs/PHASE_8.md)\n- [Phase 1 — Autonomous agent foundation](docs/PHASE_1_AGENT_FOUNDATION.md)
 - [Phase 2 — Agent tool calling system](docs/PHASE_2_AGENT_TOOL_CALLING.md)
-- [Phase 3 — Autonomous execution engine](docs/PHASE_3_AUTONOMOUS_EXECUTION.md)
+- [Phase 3 — Autonomous execution engine](docs/PHASE_3_AUTONOMOUS_EXECUTION.md)\n- [Phase 4 — Agent memory system](docs/PHASE_4_AGENT_MEMORY.md)
