@@ -110,6 +110,19 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "id", "conversation_id", "repository_id", "user_id", "role",
         "content", "sources", "created_at",
     },
+    "agent_tasks": {
+        "id", "user_id", "repository_id", "indexed_commit_sha", "goal",
+        "status", "max_steps", "latest_error", "created_at", "updated_at",
+    },
+    "agent_plans": {
+        "id", "task_id", "user_id", "repository_id", "version", "summary",
+        "completion_criteria", "assumptions", "planner_provider", "planner_model", "created_at",
+    },
+    "agent_steps": {
+        "id", "task_id", "plan_id", "user_id", "repository_id", "position",
+        "step_key", "title", "description", "rationale", "expected_output",
+        "suggested_tool", "depends_on", "status", "created_at", "updated_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -203,6 +216,40 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ix_chat_messages_conversation_created",
             "ix_chat_messages_user_repository_created",
         },
+    },
+    "agent_tasks": {
+        "primary": {"pk_agent_tasks"},
+        "unique": {"uq_agent_tasks_id_user_repository"},
+        "check": {
+            "ck_agent_tasks_status_allowed",
+            "ck_agent_tasks_max_steps_valid",
+            "ck_agent_tasks_goal_length_valid",
+        },
+        "foreign": {"fk_agent_tasks_user_id_users", "fk_agent_tasks_repository_owner"},
+        "indexes": {
+            "ix_agent_tasks_user_created",
+            "ix_agent_tasks_repository_created",
+            "ix_agent_tasks_user_status",
+        },
+    },
+    "agent_plans": {
+        "primary": {"pk_agent_plans"},
+        "unique": {"uq_agent_plans_id_task_user", "uq_agent_plans_task_version"},
+        "check": {"ck_agent_plans_version_positive"},
+        "foreign": {"fk_agent_plans_task_owner"},
+        "indexes": set(),
+    },
+    "agent_steps": {
+        "primary": {"pk_agent_steps"},
+        "unique": {"uq_agent_steps_task_position", "uq_agent_steps_task_step_key"},
+        "check": {
+            "ck_agent_steps_position_positive",
+            "ck_agent_steps_status_allowed",
+            "ck_agent_steps_title_length_valid",
+            "ck_agent_steps_step_key_length_valid",
+        },
+        "foreign": {"fk_agent_steps_task_owner", "fk_agent_steps_plan_owner"},
+        "indexes": set(),
     },
 }
 
