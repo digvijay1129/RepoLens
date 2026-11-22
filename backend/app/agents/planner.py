@@ -10,7 +10,12 @@ from pydantic import ValidationError
 
 from app.agents.schemas import AgentPlanProposal
 from app.core.config import Settings, get_settings
-from app.services.llm import LLMConfigurationError, complete_chat, get_llm_configuration
+from app.services.llm import (
+    LLMConfigurationError,
+    LLMProviderError,
+    complete_chat,
+    get_llm_configuration,
+)
 
 
 PLANNER_SYSTEM_PROMPT = """You are the planning component of RepoLens, a repository-aware
@@ -67,10 +72,9 @@ async def create_plan(
 ) -> tuple[AgentPlanProposal, Settings]:
     """Ask the configured LLM for a declarative plan; never execute its suggestions."""
     settings = (settings_factory or get_settings)()
-    try:
-        get_llm_configuration(settings)
-    except LLMConfigurationError:
-        raise
+    # Use the normalized settings so OpenRouter overrides are reflected in both
+    # the provider call and the model metadata persisted with the plan.
+    settings = get_llm_configuration(settings)
 
     messages = [
         {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
@@ -91,10 +95,12 @@ async def create_plan(
         payload = json.loads(raw)
         proposal = AgentPlanProposal.model_validate(payload)
         return validate_plan(proposal, max_steps=max_steps), settings
+    except AgentPlanningError:
+        raise
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as exc:
         raise AgentPlanningError("The planner returned an invalid execution plan. Please retry.") from exc
-    except LLMConfigurationError:
+    except (LLMConfigurationError, LLMProviderError):
         raise
     except Exception as exc:
-        # Provider-specific exceptions are normalized at the API boundary.
+        # Avoid leaking provider response bodies, credentials or internal details.
         raise AgentPlanningError("The planning provider could not produce a plan.") from exc
