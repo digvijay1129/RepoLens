@@ -18,9 +18,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_agent_tasks_status_allowed", "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_status_allowed"), "agent_tasks", type_="check")
     op.create_check_constraint(
-        "ck_agent_tasks_status_allowed",
+        op.f("ck_agent_tasks_status_allowed"),
         "agent_tasks",
         "status IN ('queued','planning','planned','running','paused','awaiting_approval','completed','failed','cancelled')",
     )
@@ -53,32 +53,32 @@ def upgrade() -> None:
         sa.Column("execution_finished_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_check_constraint(
-        "ck_agent_tasks_max_tool_calls_valid",
+        "max_tool_calls_valid",
         "agent_tasks",
         "max_tool_calls BETWEEN 1 AND 40",
     )
     op.create_check_constraint(
-        "ck_agent_tasks_max_retries_per_step_valid",
+        "max_retries_per_step_valid",
         "agent_tasks",
         "max_retries_per_step BETWEEN 0 AND 2",
     )
     op.create_check_constraint(
-        "ck_agent_tasks_total_tool_calls_nonnegative",
+        "total_tool_calls_nonnegative",
         "agent_tasks",
         "total_tool_calls >= 0",
     )
     op.create_check_constraint(
-        "ck_agent_tasks_total_retries_nonnegative",
+        "total_retries_nonnegative",
         "agent_tasks",
         "total_retries >= 0",
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_agent_tasks_total_retries_nonnegative", "agent_tasks", type_="check")
-    op.drop_constraint("ck_agent_tasks_total_tool_calls_nonnegative", "agent_tasks", type_="check")
-    op.drop_constraint("ck_agent_tasks_max_retries_per_step_valid", "agent_tasks", type_="check")
-    op.drop_constraint("ck_agent_tasks_max_tool_calls_valid", "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_total_retries_nonnegative"), "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_total_tool_calls_nonnegative"), "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_max_retries_per_step_valid"), "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_max_tool_calls_valid"), "agent_tasks", type_="check")
     op.drop_column("agent_tasks", "execution_finished_at")
     op.drop_column("agent_tasks", "execution_started_at")
     op.drop_column("agent_tasks", "final_result")
@@ -86,9 +86,9 @@ def downgrade() -> None:
     op.drop_column("agent_tasks", "total_tool_calls")
     op.drop_column("agent_tasks", "max_retries_per_step")
     op.drop_column("agent_tasks", "max_tool_calls")
-    op.drop_constraint("ck_agent_tasks_status_allowed", "agent_tasks", type_="check")
+    op.drop_constraint(op.f("ck_agent_tasks_status_allowed"), "agent_tasks", type_="check")
     op.create_check_constraint(
-        "ck_agent_tasks_status_allowed",
+        op.f("ck_agent_tasks_status_allowed"),
         "agent_tasks",
         "status IN ('queued','planning','planned','running','awaiting_approval','completed','failed','cancelled')",
     )
