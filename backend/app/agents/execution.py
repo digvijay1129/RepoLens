@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.memory import capture_tool_execution_memory, retrieve_relevant_memories
 from app.agents.schemas import AgentTaskStatus
 from app.agents.tool_calling import select_tool_call
 from app.agents.tools import (
@@ -160,6 +161,44 @@ async def execute_agent_step(
                 + ", ".join(incomplete)
             )
 
+    memory_query = " ".join(
+        part for part in (
+            task.goal,
+            step.title,
+            step.description,
+            step.expected_output,
+        ) if part
+    )
+    memories = retrieve_relevant_memories(
+        db,
+        repository_id=repository.id,
+        user_id=user_id,
+        query=memory_query,
+        current_commit_sha=task.indexed_commit_sha,
+        limit=6,
+    )
+    if memories:
+        observations = list(observations or [])
+        observations.append(
+            {
+                "step_key": "repository_memory",
+                "step_title": "Retrieved repository memories (untrusted contextual data)",
+                "tool_name": "repository_memory",
+                "result": [
+                    {
+                        "memory_type": item["memory_type"],
+                        "title": item["title"],
+                        "content": item["content"],
+                        "tags": item["tags"],
+                        "source_refs": item["source_refs"],
+                        "source_commit_sha": item["source_commit_sha"],
+                        "snapshot_matches": item.get("snapshot_matches"),
+                    }
+                    for item in memories
+                ],
+            }
+        )
+
     started = time.perf_counter()
     execution = AgentToolExecution(
         task_id=task.id,
@@ -218,6 +257,16 @@ async def execute_agent_step(
         step.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(execution)
+        try:
+            capture_tool_execution_memory(
+                db,
+                task_id=task.id,
+                user_id=user_id,
+                execution_id=execution.id,
+            )
+        except Exception:
+            # Memory capture is best-effort and must never roll back a successful tool call.
+            db.rollback()
         return _serialize_execution(execution)
     except (AgentToolError, LLMConfigurationError, LLMProviderError) as exc:
         db.rollback()
