@@ -721,3 +721,250 @@ def test_running_task_can_be_cancelled_and_is_terminal(
         json={},
     )
     assert cannot_resume.status_code == 409
+
+
+
+def test_repository_memory_crud_search_deduplication_and_owner_isolation(
+    agent_client: TestClient,
+):
+    owner = create_account(agent_client, "agent-memory-owner@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    base = f"/api/v1/agents/repositories/{repository['id']}/memories"
+
+    created = agent_client.post(
+        base,
+        headers=owner["headers"],
+        json={
+            "memory_type": "architecture",
+            "title": "Authentication architecture",
+            "content": "Authentication uses signed JWT bearer tokens and validates issuer audience and expiry before loading the workspace user.",
+            "tags": ["auth", "JWT", "backend"],
+            "importance": 5,
+            "confidence": 0.98,
+        },
+    )
+    assert created.status_code == 201, created.text
+    memory = created.json()
+    assert memory["origin"] == "user"
+    assert memory["memory_type"] == "architecture"
+    assert memory["tags"] == ["auth", "jwt", "backend"]
+    memory_id = memory["id"]
+
+    duplicate = agent_client.post(
+        base,
+        headers=owner["headers"],
+        json={
+            "memory_type": "architecture",
+            "title": "JWT authentication",
+            "content": "Authentication uses signed JWT bearer tokens and validates issuer audience and expiry before loading the workspace user.",
+            "tags": ["security"],
+            "importance": 4,
+        },
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["id"] == memory_id
+
+    listed = agent_client.get(base, headers=owner["headers"])
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    searched = agent_client.get(
+        base,
+        headers=owner["headers"],
+        params={"query": "JWT authentication issuer", "limit": 5},
+    )
+    assert searched.status_code == 200
+    assert searched.json()[0]["id"] == memory_id
+    assert searched.json()[0]["relevance_score"] > 0
+
+    updated = agent_client.patch(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=owner["headers"],
+        json={
+            "title": "JWT session security",
+            "importance": 4,
+            "tags": ["security", "jwt"],
+            "expires_at": None,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "JWT session security"
+    assert updated.json()["importance"] == 4
+    assert updated.json()["expires_at"] is None
+
+    other = create_account(agent_client, "agent-memory-other@example.com")
+    other_repo_access = agent_client.get(
+        base,
+        headers=other["headers"],
+    )
+    assert other_repo_access.status_code == 404
+    assert agent_client.patch(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=other["headers"],
+        json={"title": "Take over"},
+    ).status_code == 404
+    assert agent_client.delete(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=other["headers"],
+    ).status_code == 404
+
+    deleted = agent_client.delete(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=owner["headers"],
+    )
+    assert deleted.status_code == 204
+    assert agent_client.get(base, headers=owner["headers"]).json() == []
+
+
+def test_memory_api_rejects_invalid_types_and_unbounded_payloads(agent_client: TestClient):
+    account = create_account(agent_client, "agent-memory-validation@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    base = f"/api/v1/agents/repositories/{repository['id']}/memories"
+
+    invalid_type = agent_client.post(
+        base,
+        headers=account["headers"],
+        json={
+            "memory_type": "secret",
+            "title": "Invalid memory",
+            "content": "This memory should not be accepted because the type is invalid.",
+        },
+    )
+    assert invalid_type.status_code == 422
+
+    invalid_tag = agent_client.post(
+        base,
+        headers=account["headers"],
+        json={
+            "memory_type": "note",
+            "title": "Invalid tag",
+            "content": "This memory should not be accepted because one tag is too long.",
+            "tags": ["x" * 60],
+        },
+    )
+    assert invalid_tag.status_code == 422
+
+    invalid_payload = agent_client.post(
+        base,
+        headers=account["headers"],
+        json={
+            "memory_type": "note",
+            "title": "Valid title",
+            "content": "This note should not accept fields that bypass provenance controls.",
+            "origin": "agent",
+            "source_execution_id": "00000000-0000-4000-8000-000000000001",
+        },
+    )
+    assert invalid_payload.status_code == 422
+
+
+def test_successful_tool_execution_automatically_captures_bounded_memory(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-auto-memory@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=account["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Inspect repository metadata and review authentication.",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def choose_overview(task, step, registry, *, instruction=None, observations=None):
+        return LLMFunctionCall(
+            call_id="memory-overview-call",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_overview)
+    executed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=account["headers"],
+        json={},
+    )
+    assert executed.status_code == 200, executed.text
+    assert executed.json()["status"] == "succeeded"
+
+    memory_response = agent_client.get(
+        f"/api/v1/agents/repositories/{repository['id']}/memories",
+        headers=account["headers"],
+    )
+    assert memory_response.status_code == 200
+    assert len(memory_response.json()) == 1
+    memory = memory_response.json()[0]
+    assert memory["origin"] == "agent"
+    assert memory["memory_type"] == "architecture"
+    assert memory["source_execution_id"] == executed.json()["id"]
+    assert memory["source_commit_sha"] == "a" * 40
+    assert "Repository digvijay1129/repolens" in memory["content"]
+    assert "def " not in memory["content"]
+
+
+def test_autonomous_step_selection_receives_relevant_persisted_memory(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-memory-context@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created_memory = agent_client.post(
+        f"/api/v1/agents/repositories/{repository['id']}/memories",
+        headers=account["headers"],
+        json={
+            "memory_type": "convention",
+            "title": "Authentication modules",
+            "content": "Authentication entry points are defined in backend/app/api/routes/auth.py and token validation is implemented by backend/app/services/auth.py.",
+            "tags": ["authentication", "jwt", "backend"],
+            "importance": 5,
+        },
+    )
+    assert created_memory.status_code == 201, created_memory.text
+
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=account["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and token validation.",
+        },
+    )
+    task_id = created.json()["id"]
+    observed_contexts = []
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+        observed_contexts.append(observations or [])
+        return LLMFunctionCall(
+            call_id=f"memory-context-{len(observed_contexts)}",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    response = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=account["headers"],
+        json={
+            "max_tool_calls": 4,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "completed"
+    assert any(
+        item.get("tool_name") == "repository_memory"
+        and "backend/app/api/routes/auth.py" in str(item.get("result"))
+        for item in observed_contexts[-1]
+    )
