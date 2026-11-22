@@ -77,3 +77,16 @@ def test_agent_approval_model_binds_task_step_and_decision_owner():
         "fk_agent_approval_requests_delegation",
         "fk_agent_approval_requests_executed_execution",
     } <= foreign_names
+
+
+
+def test_agent_approval_model_has_owner_scoped_foreign_keys():
+    table = Base.metadata.tables["agent_approval_requests"]
+    foreign_names = {item.name for item in table.foreign_key_constraints}
+    assert {
+        "fk_agent_approval_requests_task_owner",
+        "fk_agent_approval_requests_step_owner",
+        "fk_agent_approval_requests_delegation",
+        "fk_agent_approval_requests_proposed_execution",
+        "fk_agent_approval_requests_executed_execution",
+    } <= foreign_names
