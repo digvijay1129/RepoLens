@@ -73,9 +73,11 @@ class AgentStep(Base):
         "AgentTask",
         back_populates="steps",
         foreign_keys=[task_id, user_id, repository_id],
+        overlaps="plan,steps",
     )
     plan = relationship(
         "AgentPlan",
         back_populates="steps",
         foreign_keys=[plan_id, task_id, user_id],
+        overlaps="task,steps",
     )
