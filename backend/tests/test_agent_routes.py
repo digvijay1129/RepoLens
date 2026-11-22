@@ -1207,3 +1207,337 @@ def test_failed_specialist_delegation_is_persisted_for_coordinator_review(
     assert delegations.json()[0]["specialist_key"] == "research"
     assert delegations.json()[0]["status"] == "failed"
     assert "not available" in delegations.json()[0]["error_message"]
+
+
+
+def test_approve_each_blocks_tool_until_owner_approves_exact_action_and_resumes_once(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+    from app.agents.tools.registry import AgentToolRegistry
+
+    owner = create_account(agent_client, "agent-approval-owner@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+            "approval_mode": "approve_each",
+        },
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+    assert created.json()["approval_mode"] == "approve_each"
+
+    selection_steps = []
+    tool_executions = []
+    original_execute = AgentToolRegistry.execute
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        selection_steps.append(step.step_key)
+        return LLMFunctionCall(
+            call_id=f"approval-call-{step.step_key}",
+            name="repository_overview",
+            arguments={},
+        )
+
+    async def count_tool_execute(self, name, arguments, context):
+        tool_executions.append(name)
+        return await original_execute(self, name, arguments, context)
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    monkeypatch.setattr(AgentToolRegistry, "execute", count_tool_execute)
+
+    proposed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert proposed.status_code == 202, proposed.text
+    assert proposed.json()["approval_required"] is True
+    approval = proposed.json()["approval"]
+    assert approval["status"] == "pending"
+    assert approval["tool_name"] == "repository_overview"
+    assert approval["specialist_key"] == "research"
+    assert len(approval["action_hash"]) == 64
+    assert selection_steps == ["find_auth"]
+    assert tool_executions == []
+
+    task_detail = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}",
+        headers=owner["headers"],
+    )
+    assert task_detail.status_code == 200
+    assert task_detail.json()["status"] == "awaiting_approval"
+
+    executions = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/tool-executions",
+        headers=owner["headers"],
+    )
+    assert executions.status_code == 200
+    assert len(executions.json()) == 1
+    assert executions.json()[0]["status"] == "awaiting_approval"
+    assert executions.json()[0]["tool_output"] is None
+
+    pending = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/approvals",
+        headers=owner["headers"],
+    )
+    assert pending.status_code == 200
+    assert len(pending.json()) == 1
+    assert pending.json()[0]["id"] == approval["id"]
+
+    blocked_resume = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/resume",
+        headers=owner["headers"],
+        json={"max_tool_calls": 5},
+    )
+    assert blocked_resume.status_code == 409
+    assert tool_executions == []
+
+    other = create_account(agent_client, "agent-approval-other@example.com")
+    foreign_approval = agent_client.post(
+        f"/api/v1/agents/approvals/{approval['id']}/approve",
+        headers=other["headers"],
+        json={},
+    )
+    assert foreign_approval.status_code == 404
+
+    approved = agent_client.post(
+        f"/api/v1/agents/approvals/{approval['id']}/approve",
+        headers=owner["headers"],
+        json={"comment": "Reviewed the proposed read-only repository inspection."},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["decided_by_user_id"] == owner["user"]["id"]
+    duplicate_decision = agent_client.post(
+        f"/api/v1/agents/approvals/{approval['id']}/approve",
+        headers=owner["headers"],
+        json={},
+    )
+    assert duplicate_decision.status_code == 409
+    assert tool_executions == []
+
+    resumed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/resume",
+        headers=owner["headers"],
+        json={
+            "max_tool_calls": 5,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["status"] == "awaiting_approval"
+    assert tool_executions == ["repository_overview"]
+    # The approved first step reuses its stored tool choice; only the second step is selected.
+    assert selection_steps == ["find_auth", "review_tokens"]
+
+    history = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/approvals",
+        headers=owner["headers"],
+    )
+    assert history.status_code == 200
+    assert len(history.json()) == 2
+    completed_approval = next(item for item in history.json() if item["id"] == approval["id"])
+    assert completed_approval["status"] == "executed"
+    assert completed_approval["executed_execution_id"] is not None
+    assert next(item for item in history.json() if item["id"] != approval["id"])["status"] == "pending"
+
+
+def test_denial_stops_task_without_invoking_proposed_tool(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+    from app.agents.tools.registry import AgentToolRegistry
+
+    owner = create_account(agent_client, "agent-approval-deny@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+            "approval_mode": "approve_each",
+        },
+    )
+    task_id = created.json()["id"]
+    handler_calls = []
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        return LLMFunctionCall(
+            call_id="approval-denial-call",
+            name="repository_overview",
+            arguments={},
+        )
+
+    async def count_execute(self, name, arguments, context):
+        handler_calls.append(name)
+        return {"should_not": "execute"}
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    monkeypatch.setattr(AgentToolRegistry, "execute", count_execute)
+
+    proposed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert proposed.status_code == 202
+    approval_id = proposed.json()["approval"]["id"]
+
+    denied = agent_client.post(
+        f"/api/v1/agents/approvals/{approval_id}/deny",
+        headers=owner["headers"],
+        json={"comment": "Do not run this proposed action."},
+    )
+    assert denied.status_code == 200
+    assert denied.json()["status"] == "denied"
+    assert denied.json()["decision_comment"] == "Do not run this proposed action."
+    assert handler_calls == []
+
+    task = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}",
+        headers=owner["headers"],
+    )
+    assert task.json()["status"] == "failed"
+    assert "denied" in task.json()["latest_error"].lower()
+
+    execution_history = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/tool-executions",
+        headers=owner["headers"],
+    )
+    assert execution_history.json()[0]["status"] == "failed"
+    assert handler_calls == []
+
+    second_decision = agent_client.post(
+        f"/api/v1/agents/approvals/{approval_id}/approve",
+        headers=owner["headers"],
+        json={},
+    )
+    assert second_decision.status_code == 409
+
+
+def test_expired_approval_is_invalidated_and_task_stopped(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from datetime import datetime, timezone
+
+    from app.agents import execution as execution_service
+    from app.models.agent_approval_request import AgentApprovalRequest
+
+    owner = create_account(agent_client, "agent-approval-expiry@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+            "approval_mode": "approve_each",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        return LLMFunctionCall(
+            call_id="approval-expired-call",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    proposed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert proposed.status_code == 202
+    approval_id = UUID(proposed.json()["approval"]["id"])
+
+    with Session(agent_client.app.state.agent_test_engine) as db:
+        approval = db.get(AgentApprovalRequest, approval_id)
+        approval.expires_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        db.commit()
+
+    response = agent_client.post(
+        f"/api/v1/agents/approvals/{approval_id}/approve",
+        headers=owner["headers"],
+        json={},
+    )
+    assert response.status_code == 409
+    assert "expired" in response.json()["detail"].lower()
+
+    history = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/approvals",
+        headers=owner["headers"],
+    )
+    assert history.json()[0]["status"] == "expired"
+    task = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}",
+        headers=owner["headers"],
+    )
+    assert task.json()["status"] == "failed"
+
+
+def test_cancelling_task_cancels_its_pending_approval(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    owner = create_account(agent_client, "agent-approval-cancel@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+            "approval_mode": "approve_each",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        return LLMFunctionCall(
+            call_id="approval-cancel-call",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    proposed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert proposed.status_code == 202
+
+    cancelled = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/cancel",
+        headers=owner["headers"],
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    history = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/approvals",
+        headers=owner["headers"],
+    )
+    assert history.json()[0]["status"] == "cancelled"
