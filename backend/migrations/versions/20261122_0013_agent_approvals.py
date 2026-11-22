@@ -127,7 +127,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_agent_approval_requests_task_status",
         "agent_approval_requests",
-        ["task_id", "status", "created_at"],
+        ["task_id", "status", "requested_at"],
         unique=False,
     )
     op.create_index(
@@ -139,7 +139,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_agent_approval_requests_step_created",
         "agent_approval_requests",
-        ["step_id", "created_at"],
+        ["step_id", "requested_at"],
         unique=False,
     )
 
