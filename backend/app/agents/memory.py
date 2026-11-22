@@ -316,11 +316,22 @@ def update_repository_memory(
         raise AgentMemoryNotFoundError("Repository memory was not found.")
     allowed = {"memory_type", "title", "content", "tags", "importance", "confidence", "expires_at"}
     for key, value in updates.items():
-        if key in allowed and value is not None:
+        if key in allowed and (value is not None or key == "expires_at"):
             if key == "tags":
                 value = list(dict.fromkeys(tag.strip().casefold()[:48] for tag in value if tag.strip()))[:12]
             setattr(memory, key, value)
-    memory.content_hash = _content_hash(memory.memory_type, memory.content)
+    updated_hash = _content_hash(memory.memory_type, memory.content)
+    duplicate = db.scalar(
+        select(AgentMemory).where(
+            AgentMemory.user_id == memory.user_id,
+            AgentMemory.repository_id == memory.repository_id,
+            AgentMemory.content_hash == updated_hash,
+            AgentMemory.id != memory.id,
+        )
+    )
+    if duplicate is not None:
+        raise AgentMemoryLimitError("Another memory with the same content already exists.")
+    memory.content_hash = updated_hash
     memory.updated_at = _utcnow()
     db.commit()
     db.refresh(memory)
