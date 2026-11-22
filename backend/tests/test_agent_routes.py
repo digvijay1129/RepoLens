@@ -1160,3 +1160,50 @@ def test_autonomous_final_report_contains_coordinator_team_synthesis(
         "Repository Research Agent",
         "Code Analysis Agent",
     }
+
+
+
+def test_failed_specialist_delegation_is_persisted_for_coordinator_review(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    owner = create_account(agent_client, "agent-team-failed@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def choose_disallowed_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        return LLMFunctionCall(
+            call_id="attempted-unregistered-tool",
+            name="execute_shell",
+            arguments={"command": "echo unsafe"},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_disallowed_tool)
+    response = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert response.status_code == 502
+
+    delegations = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/delegations",
+        headers=owner["headers"],
+    )
+    assert delegations.status_code == 200
+    assert len(delegations.json()) == 1
+    assert delegations.json()[0]["specialist_key"] == "research"
+    assert delegations.json()[0]["status"] == "failed"
+    assert "Unknown" in delegations.json()[0]["error_message"] or "registered" in delegations.json()[0]["error_message"]
