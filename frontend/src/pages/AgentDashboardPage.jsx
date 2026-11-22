@@ -407,40 +407,6 @@ export default function AgentDashboardPage({ repositories = [], selectedReposito
   const canRun = task && ["planned", "paused"].includes(task.status);
   const canCancel = task && !["completed", "failed", "cancelled"].includes(task.status);
 
-  if (!indexedRepositories.length) {
-    return (
-      <section className="agent-page animate-fade-in">
-        <header className="agent-page-heading">
-          <span className="eyebrow"><span className="eyebrow-line" /> AUTONOMOUS WORKSPACE</span>
-          <h1>Agent dashboard</h1>
-          <p>Plan repository work, coordinate specialist agents, and control every proposed action.</p>
-        </header>
-        <div className="agent-empty-repository panel">
-          <span className="agent-hero-icon"><BrainCircuit size={26} /></span>
-          <h2>Prepare a repository for autonomous analysis</h2>
-          <p>Connect a repository and finish source indexing before creating an agent task. RepoLens pins each task to an indexed commit.</p>
-          {repositories.length > 0 ? (
-            <div className="agent-repository-picker">
-              <label htmlFor="agent-repository-select">Choose repository</label>
-              <select id="agent-repository-select" value={repositoryId} onChange={(event) => {
-                setRepositoryId(event.target.value);
-                const selected = repositories.find((item) => item.id === event.target.value);
-                if (selected) onSelectRepository?.(selected.full_name);
-              }}>
-                {repositories.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.indexing_status}</option>)}
-              </select>
-            </div>
-          ) : <p className="agent-empty-caption">No saved repositories are connected to this workspace yet.</p>}
-          <div className="agent-prerequisite-row">
-            <span><CheckCircle2 size={15} /> Connect GitHub repository</span>
-            <span><CircleDashed size={15} /> Index source files</span>
-          </div>
-          <button className="button button-secondary" type="button" onClick={() => window.location.assign("/repositories")}>Open repositories <ArrowRight size={15} /></button>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="agent-page animate-fade-in">
       <header className="agent-page-heading">
@@ -457,7 +423,7 @@ export default function AgentDashboardPage({ repositories = [], selectedReposito
               const selected = repositories.find((item) => item.id === event.target.value);
               if (selected) onSelectRepository?.(selected.full_name);
             }}>
-              {indexedRepositories.map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}
+              {repositories.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.indexing_status}</option>)}
             </select>
           </label>
           <button className="button button-secondary" type="button" onClick={refreshWorkspace} disabled={loading || !repositoryId}>
@@ -498,11 +464,11 @@ export default function AgentDashboardPage({ repositories = [], selectedReposito
                 {[4, 6, 8, 10, 12, 16, 20].map((value) => <option key={value} value={String(value)}>{value} steps</option>)}
               </select>
             </div>
-            <button className="button button-primary button-full" type="submit" disabled={busy === "create" || !goal.trim()}>
+            <button className="button button-primary button-full" type="submit" disabled={busy === "create" || !goal.trim() || !activeRepository || activeRepository.indexing_status !== "indexed" || !activeRepository.indexed_commit_sha}>
               {busy === "create" ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}
               Create & plan task
             </button>
-            <p className="agent-form-help"><LockKeyhole size={12} /> Tasks are pinned to the selected indexed commit.</p>
+            <p className="agent-form-help"><LockKeyhole size={12} /> {activeRepository?.indexing_status === "indexed" && activeRepository?.indexed_commit_sha ? "Tasks are pinned to the selected indexed commit." : "Index this repository before creating an autonomous task. Repository memories remain available below."}</p>
           </form>
           <div className="agent-task-list-heading"><span>RECENT TASKS</span><button type="button" onClick={() => loadTasks(repositoryId)} aria-label="Reload tasks"><RefreshCw size={13} /></button></div>
           <div className="agent-task-list">
@@ -518,12 +484,41 @@ export default function AgentDashboardPage({ repositories = [], selectedReposito
 
         <div className="agent-workspace-column">
           {!selectedTaskId ? (
-            <div className="agent-task-welcome panel">
-              <span className="agent-hero-icon"><BrainCircuit size={26} /></span>
-              <h2>Your autonomous workspace</h2>
-              <p>Create a task to let RepoLens plan repository research, delegate work to specialists, and return source-grounded findings.</p>
-              <div className="agent-feature-chips"><span><Users size={14} /> Multi-agent</span><span><MemoryStick size={14} /> Persistent memory</span><span><ShieldCheck size={14} /> Human approval</span></div>
-            </div>
+            activeTab === "memory" ? (
+              <section className="agent-tab-content">
+                <SectionHeading kicker="PERSISTENT CONTEXT" title="Repository memory" description="Manage repository knowledge independently of agent tasks." />
+                <form className="agent-memory-form panel" onSubmit={handleCreateMemory}>
+                  <div className="agent-memory-form-heading"><span className="agent-role-icon"><MemoryStick size={18} /></span><div><strong>Add repository knowledge</strong><p>Saved memories are scoped to {activeRepository?.full_name || "the selected repository"}.</p></div></div>
+                  <div className="agent-memory-form-grid">
+                    <label>Memory type<select value={memoryType} onChange={(event) => setMemoryType(event.target.value)}><option value="note">Note</option><option value="architecture">Architecture</option><option value="convention">Convention</option><option value="decision">Decision</option><option value="troubleshooting">Troubleshooting</option></select></label>
+                    <label>Title<input value={memoryTitle} onChange={(event) => setMemoryTitle(event.target.value)} minLength={3} maxLength={160} placeholder="e.g. API authentication convention" required /></label>
+                  </div>
+                  <label className="agent-memory-content-label">Knowledge<textarea rows="3" value={memoryContent} onChange={(event) => setMemoryContent(event.target.value)} minLength={8} maxLength={6000} placeholder="Describe the repository knowledge the agent should remember…" required /></label>
+                  <div className="agent-memory-form-actions"><span>Up to 6,000 characters · User-curated</span><button className="button button-primary button-small" type="submit" disabled={!repositoryId || busy === "memory-create" || !memoryTitle.trim() || !memoryContent.trim()}><Plus size={14} />Save memory</button></div>
+                </form>
+                <div className="agent-memory-toolbar"><label className="agent-search-field"><Search size={15} /><input value={memoryQuery} onChange={(event) => setMemoryQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadMemories(repositoryId)} placeholder="Search repository memories…" /></label><label className="agent-checkbox"><input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} />Include archived and expired</label><button className="button button-secondary button-small" type="button" onClick={() => loadMemories(repositoryId)} disabled={!repositoryId}><Search size={13} />Search</button></div>
+                {memories.length ? <div className="agent-memory-list">{memories.map((memory) => (
+                  <article className={"agent-memory-card panel " + (!memory.is_active ? "is-archived" : "")} key={memory.id}>
+                    <div className="agent-memory-card-top"><span className="agent-memory-type">{memory.memory_type}</span><StatusPill value={memory.is_active ? (memory.expires_at && new Date(memory.expires_at) < new Date() ? "expired" : "succeeded") : "cancelled"} /></div>
+                    <h3>{memory.title}</h3><p>{memory.content}</p>
+                    <div className="agent-memory-meta"><span>Importance {memory.importance}/5</span><span>{memory.access_count} retrievals</span><span>Updated {formatDate(memory.updated_at)}</span></div>
+                    <div className="agent-memory-actions">{memory.is_active ? <button type="button" className="button button-secondary button-small" disabled={!!busy} onClick={() => handleMemoryArchive(memory, false)}>Archive</button> : <button type="button" className="button button-secondary button-small" disabled={!!busy} onClick={() => handleMemoryArchive(memory, true)}>Restore</button>}<button type="button" className="button button-quiet button-small" disabled={!!busy} onClick={() => handleMemoryDelete(memory)}>Delete</button></div>
+                  </article>
+                ))}</div> : <EmptyState icon={MemoryStick} title="No repository memories found" description="Add a note above or change the search to find saved knowledge." />}
+                {!repositoryId && <p className="agent-empty-caption">Connect or select a repository to manage its memory.</p>}
+              </section>
+            ) : (
+              <div className="agent-task-welcome panel">
+                <span className="agent-hero-icon"><BrainCircuit size={26} /></span>
+                <h2>Your autonomous workspace</h2>
+                <p>{activeRepository ? "Create a task to let RepoLens plan repository research, delegate work to specialists, and return source-grounded findings." : "Connect a repository to start using the agent workspace."}</p>
+                <div className="agent-feature-chips"><span><Users size={14} /> Multi-agent</span><span><MemoryStick size={14} /> Persistent memory</span><span><ShieldCheck size={14} /> Human approval</span></div>
+                <div className="agent-welcome-actions">
+                  {repositoryId && <button className="button button-secondary button-small" type="button" onClick={() => setActiveTab("memory")}><MemoryStick size={14} />Manage repository memory</button>}
+                  {!repositoryId && <button className="button button-primary button-small" type="button" onClick={() => window.location.assign("/repositories")}>Connect repository <ArrowRight size={14} /></button>}
+                </div>
+              </div>
+            )
           ) : detailLoading ? (
             <div className="agent-loading-panel panel"><LoaderCircle className="spin" size={20} /> Loading task workspace…</div>
           ) : task ? (
