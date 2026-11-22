@@ -47,6 +47,22 @@ vi.mock("./lib/api.js", () => ({
   getRepositoryConversations: vi.fn(),
   getRepositoryConversation: vi.fn(),
   deleteSavedRepository: vi.fn(),
+  approveAgentAction: vi.fn(),
+  cancelAgentTask: vi.fn(),
+  createAgentTask: vi.fn(),
+  createRepositoryMemory: vi.fn(),
+  deleteRepositoryMemory: vi.fn(),
+  denyAgentAction: vi.fn(),
+  getAgentApprovals: vi.fn(),
+  getAgentDelegations: vi.fn(),
+  getAgentTasks: vi.fn(),
+  getAgentTeam: vi.fn(),
+  getAgentTask: vi.fn(),
+  getAgentToolExecutions: vi.fn(),
+  getRepositoryMemories: vi.fn(),
+  resumeAgentTask: vi.fn(),
+  runAgentTask: vi.fn(),
+  updateRepositoryMemory: vi.fn(),
 }));
 
 const userProfile = {
