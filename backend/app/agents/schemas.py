@@ -39,6 +39,7 @@ class AgentGoalRequest(BaseModel):
 
     repository_id: UUID
     goal: str = Field(min_length=8, max_length=4000)
+    approval_mode: Literal["auto", "approve_each"] = "auto"
     max_steps: int = Field(default=8, ge=1, le=20)
 
     @field_validator("goal")
@@ -237,3 +238,31 @@ class AgentMemoryResponse(BaseModel):
     updated_at: str | None = None
     relevance_score: float | None = None
     snapshot_matches: bool | None = None
+
+
+
+class AgentApprovalDecisionRequest(BaseModel):
+    """One authenticated human decision on a pending proposed tool action."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class AgentApprovalResponse(BaseModel):
+    id: UUID
+    task_id: UUID
+    step_id: UUID
+    delegation_id: UUID | None = None
+    executed_execution_id: UUID | None = None
+    approval_mode: str
+    tool_name: str
+    tool_arguments: dict
+    specialist_key: str
+    policy_reason: str
+    status: Literal["pending", "approved", "denied", "expired", "cancelled", "executed"]
+    requested_at: str
+    expires_at: str
+    decided_at: str | None = None
+    decided_by_user_id: UUID | None = None
+    decision_comment: str | None = None
