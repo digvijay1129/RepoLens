@@ -2,6 +2,9 @@
 
 from app.agents.schemas import (
     AgentGoalRequest,
+    AgentMemoryCreateRequest,
+    AgentMemoryResponse,
+    AgentMemoryUpdateRequest,
     AgentPlanProposal,
     AgentPlanResponse,
     AgentPlanStepInput,
@@ -14,6 +17,9 @@ from app.agents.schemas import (
 
 __all__ = [
     "AgentGoalRequest",
+    "AgentMemoryCreateRequest",
+    "AgentMemoryResponse",
+    "AgentMemoryUpdateRequest",
     "AgentPlanProposal",
     "AgentPlanResponse",
     "AgentPlanStepInput",
