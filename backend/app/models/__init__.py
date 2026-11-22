@@ -3,6 +3,7 @@
 from app.models.agent_plan import AgentPlan
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
+from app.models.agent_tool_execution import AgentToolExecution
 from app.models.chat_conversation import ChatConversation
 from app.models.chat_message import ChatMessage
 from app.models.indexing_job import IndexingJob
@@ -22,4 +23,5 @@ __all__ = [
     "AgentTask",
     "AgentPlan",
     "AgentStep",
+    "AgentToolExecution",
 ]
