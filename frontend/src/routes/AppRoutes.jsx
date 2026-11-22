@@ -4,6 +4,7 @@ import RepositoriesPage from "../pages/RepositoriesPage.jsx";
 import CodeExplorerPage from "../pages/CodeExplorerPage.jsx";
 import ConversationsPage from "../pages/ConversationsPage.jsx";
 import SettingsPage from "../pages/SettingsPage.jsx";
+import AgentDashboardPage from "../pages/AgentDashboardPage.jsx";
 
 export default function AppRoutes({
   apiStatus,
@@ -59,6 +60,13 @@ export default function AppRoutes({
           onGoToExplorer={() => onNavigate("explorer", selectedRepositoryKey)}
           initialPrompt={initialPrompt}
           onInitialPromptConsumed={onInitialPromptConsumed}
+        />
+      } />
+      <Route path="/agents" element={
+        <AgentDashboardPage
+          repositories={repositories}
+          selectedRepositoryKey={selectedRepositoryKey}
+          onSelectRepository={onSelectRepository}
         />
       } />
       <Route path="/settings" element={
