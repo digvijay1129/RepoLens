@@ -126,3 +126,23 @@ class AgentTaskDetail(AgentTaskSummary):
     plan: dict | None = None
     steps: list[dict]
     latest_error: str | None = None
+
+
+class AgentStepExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    instruction: str | None = Field(default=None, max_length=1500)
+
+
+class AgentToolExecutionResponse(BaseModel):
+    id: UUID
+    task_id: UUID
+    step_id: UUID
+    tool_name: str
+    status: Literal["running", "succeeded", "failed"]
+    tool_input: dict
+    tool_output: dict | None = None
+    error_message: str | None = None
+    duration_ms: int | None = None
+    created_at: str
+    finished_at: str | None = None
