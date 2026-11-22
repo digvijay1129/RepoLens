@@ -1,5 +1,6 @@
 """Import all models here so SQLAlchemy and Alembic discover their tables."""
 
+from app.models.agent_memory import AgentMemory
 from app.models.agent_plan import AgentPlan
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
@@ -24,4 +25,5 @@ __all__ = [
     "AgentPlan",
     "AgentStep",
     "AgentToolExecution",
+    "AgentMemory",
 ]
