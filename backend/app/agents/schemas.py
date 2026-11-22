@@ -127,7 +127,6 @@ class AgentTaskSummary(BaseModel):
 
 
 class AgentTaskDetail(AgentTaskSummary):
-    approval_mode: Literal["auto", "approve_each"] = "auto"
     plan: dict | None = None
     steps: list[dict]
     latest_error: str | None = None
