@@ -350,6 +350,7 @@ async def execute_agent_step(
         db.rollback()
         execution = db.get(AgentToolExecution, execution.id)
         step = db.get(AgentStep, step.id)
+        delegation = db.get(AgentDelegation, delegation.id)
         if execution is not None:
             execution.status = "failed"
             execution.error_message = "Tool execution failed unexpectedly."
