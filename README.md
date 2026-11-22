@@ -13,9 +13,10 @@ RepoLens helps developers understand public GitHub repositories by browsing sour
 - **Search code:** run PostgreSQL full-text keyword search, pgvector cosine-similarity search, or hybrid retrieval with Reciprocal Rank Fusion (RRF).
 - **Ask codebase questions:** retrieve relevant chunks and pass bounded source context to an OpenAI-compatible chat provider. Answers carry source citations linked to the original code.
 - **Keep workspaces:** save repositories, indexing/embedding job states, and chat conversations in PostgreSQL, scoped to the authenticated user.
-- **Evaluate retrieval:** measure Recall@k, MRR, nDCG@k, citation validity, citation support precision, and coverage using an offline evaluation dataset.\n- **Plan agent tasks (Phase 1):** turn a repository goal into a validated, ordered plan with dependencies, completion criteria and persisted task history.
+- **Evaluate retrieval:** measure Recall@k, MRR, nDCG@k, citation validity, citation support precision, and coverage using an offline evaluation dataset.
+- **Use read-only agent tools (Phase 2):** let the LLM select one registered repository tool for a planned step, validate its arguments, execute it against the pinned snapshot, and persist the result and audit record.\n- **Plan agent tasks (Phase 1):** turn a repository goal into a validated, ordered plan with dependencies, completion criteria and persisted task history.
 
-RepoLens indexes source text for analysis. The Phase 1 agent foundation generates and persists declarative plans; it does **not yet execute tools or repository code**, and it does not train a model.
+RepoLens indexes source text for analysis. Its Phase 1 agent planner persists declarative plans; Phase 2 adds user-triggered, single-step, read-only tool calls. It does **not execute repository code**, run shell commands, or train a model.
 
 ## How it works
 
@@ -43,6 +44,10 @@ flowchart TB
     LLM --> ANSWER[Answer with validated source labels]
     ANSWER --> HISTORY[(PostgreSQL conversations and citations)]
     HISTORY --> FE\n    API --> AGENT[Authenticated agent planning API]\n    AGENT --> PLANNER[Existing LLM provider creates a declarative plan]\n    PLANNER --> TASKS[(Owner-scoped agent tasks, plans and steps)]\n    TASKS --> FE
+    AGENT --> TOOLS[Validated read-only tool registry]
+    TOOLS --> REPO_TOOLS[Repository overview, file listing, code search and source inspection]
+    REPO_TOOLS --> AUDIT[(PostgreSQL tool execution audit log)]
+    AUDIT --> FE
 ```
 
 ### Main processing stages
@@ -96,7 +101,7 @@ Search results include ranked source snippets and repository/file/line context s
 
 The LLM is used to explain retrieved code; it is not used to fabricate repository contents. Generated answers can still be wrong, so verify important statements against their citations.
 
-### Agent task planning (Phase 1)\n\n- Create an authenticated task against a saved, indexed repository.\n- Use the existing OpenAI-compatible / OpenRouter chat provider to generate a structured plan.\n- Validate step count, unique step keys, dependency ordering and suggested tool names before persistence.\n- Persist the repository commit SHA, goal, plan summary, assumptions, completion criteria and ordered steps.\n- List, inspect and cancel queued or planned tasks within the current user's workspace.\n- Enforce ownership with authenticated API dependencies and database composite foreign keys.\n\nPhase 1 is planning-only. Suggested tool labels are descriptive planning metadata; they are not callable tools yet. Tool registration and execution are reserved for Phases 2 and 3.\n\n### Retrieval evaluation
+### Agent task planning and read-only tool calling (Phases 1–2)\n\n- Create an authenticated task against a saved, indexed repository.\n- Use the existing OpenAI-compatible / OpenRouter chat provider to generate a structured plan.\n- Validate step count, unique step keys, dependency ordering and suggested tool names before persistence.\n- Persist the repository commit SHA, goal, plan summary, assumptions, completion criteria and ordered steps.\n- List, inspect and cancel queued or planned tasks within the current user's workspace.\n- Enforce ownership with authenticated API dependencies and database composite foreign keys.\n\nPhase 1 creates validated, persisted declarative plans. Phase 2 adds four allowlisted read-only repository tools selected through OpenAI-compatible function calling. A user can execute one planned step at a time; the multi-step autonomous execution loop remains reserved for Phase 3.\n\n### Retrieval evaluation
 
 The offline evaluation utility supports:
 
@@ -134,7 +139,7 @@ The tree below shows the main source areas and their responsibilities.
 RepoLens/
 ├── backend/
 │   ├── app/
-│   │   ├── agents/                 # Task planner, orchestration and lifecycle state
+│   │   ├── agents/                 # Planner, lifecycle state, read-only tools and execution
 │   │   ├── api/
 │   │   │   ├── routes/             # Versioned REST endpoints
 │   │   │   ├── schemas/            # Request and response schemas
@@ -144,7 +149,7 @@ RepoLens/
 │   │   ├── db/                     # SQLAlchemy session and schema checks
 │   │   ├── evaluation/             # Retrieval and citation evaluation
 │   │   ├── models/                 # User, repository, chunks, jobs, chat and agent models
-│   │   ├── services/               # GitHub, indexing, embeddings, retrieval and chat
+│   │   ├── services/               # GitHub, indexing, embeddings, retrieval, chat and LLM tools
 │   │   └── main.py                 # FastAPI application entry point
 │   ├── evaluation/
 │   │   └── examples/               # Example JSONL evaluation input
@@ -186,6 +191,7 @@ PostgreSQL is the persistent workspace store. The main entities include:
 | Chunk embedding | Vector representation plus provider/model/dimension metadata |
 | Chat conversation | Conversation associated with an authenticated user and saved repository |
 | Chat message | User/assistant message, timestamp, and stored citation metadata |\n| Agent task | User goal, repository snapshot, lifecycle status and step budget |\n| Agent plan | Versioned structured plan, provider/model metadata and completion criteria |\n| Agent step | Ordered step description, dependencies, suggested tool and step status |
+| Agent tool execution | Audited function call, validated arguments, structured result/error, duration and timestamps |
 
 Migrations are managed with Alembic. The pgvector extension must be installed on the PostgreSQL server and enabled in the RepoLens database before applying migrations that create vector storage.
 
@@ -206,6 +212,9 @@ All application routes are versioned under `/api/v1`. The development API schema
 | Chat | `POST /repositories/saved/{repository_id}/chat` | Ask a repository-grounded question |
 | Conversations | `GET /repositories/saved/{repository_id}/conversations`, `GET /repositories/saved/{repository_id}/conversations/{conversation_id}` | Read saved conversation history |
 | Public contents | `GET /repositories/{owner}/{repository}/contents` | Browse public repository contents |\n| Agent tasks | `POST /agents/tasks`, `GET /agents/tasks` | Create a plan and list the current user's agent tasks |\n| Agent task detail | `GET /agents/tasks/{task_id}` | Inspect an owner-scoped task, plan and steps |\n| Agent cancellation | `POST /agents/tasks/{task_id}/cancel` | Cancel a queued or planned task |
+| Agent tool catalog | `GET /agents/tasks/{task_id}/tools` | List available read-only tool schemas |
+| Agent step execution | `POST /agents/tasks/{task_id}/steps/{step_key}/execute` | Select and execute one registered read-only tool for a planned step |
+| Agent tool history | `GET /agents/tasks/{task_id}/tool-executions` | Inspect owner-scoped tool execution records |
 
 Protected workspace operations require authentication and verify resource ownership. The OpenAPI schema in the running backend provides exact request and response fields.
 
@@ -370,7 +379,7 @@ Current scope limitations:
 - No repository code execution, Docker workflow, or TypeScript application is included.
 - Chat and embeddings depend on external provider configuration and availability.
 - Citation grounding improves traceability but does not guarantee that generated answers are always correct.
-- Agent Phase 1 ends after validated plan creation: no agent tool-calling loop, autonomous step execution, filesystem writes or shell execution is enabled yet.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
+- Agent Phase 2 supports manual, single-step read-only tool calls only. The autonomous multi-step execution loop, filesystem writes and shell execution are not enabled.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
 
 See [SECURITY.md](SECURITY.md) for the project security policy.
 
@@ -390,3 +399,4 @@ Detailed implementation notes are maintained in `docs/`:
 - [Phase 6 — RAG chat and conversation history](docs/PHASE_6.md)
 - [Phase 7 — OpenRouter integration and evaluation](docs/PHASE_7.md)
 - [Phase 8 — Deployment preparation and security](docs/PHASE_8.md)\n- [Phase 1 — Autonomous agent foundation](docs/PHASE_1_AGENT_FOUNDATION.md)
+- [Phase 2 — Agent tool calling system](docs/PHASE_2_AGENT_TOOL_CALLING.md)
