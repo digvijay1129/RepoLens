@@ -2,9 +2,19 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,6 +29,8 @@ class AgentPlan(Base):
             name="fk_agent_plans_task_owner",
             ondelete="CASCADE",
         ),
+        UniqueConstraint("id", "task_id", "user_id", name="uq_agent_plans_id_task_user"),
+        UniqueConstraint("task_id", "version", name="uq_agent_plans_task_version"),
         CheckConstraint("version >= 1", name="version_positive"),
     )
 
@@ -32,7 +44,19 @@ class AgentPlan(Base):
     assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     planner_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     planner_model: Mapped[str] = mapped_column(String(150), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
-    task = relationship("AgentTask", back_populates="plan")
-    steps = relationship("AgentStep", back_populates="plan", cascade="all, delete-orphan", order_by="AgentStep.position")
+    task = relationship(
+        "AgentTask",
+        back_populates="plan",
+        foreign_keys=[task_id, user_id, repository_id],
+    )
+    steps = relationship(
+        "AgentStep",
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="AgentStep.position",
+        foreign_keys="[AgentStep.plan_id, AgentStep.task_id, AgentStep.user_id]",
+    )
