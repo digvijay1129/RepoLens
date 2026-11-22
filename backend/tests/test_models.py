@@ -33,7 +33,7 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     assert set(inspector.get_table_names()) == {
         "users", "repositories", "indexing_jobs", "repository_chunks",
         "repository_chunk_embeddings", "chat_conversations", "chat_messages",
-        "agent_tasks", "agent_plans", "agent_steps",
+        "agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions",
     }
     assert "uq_repositories_user_full_name" in {
         constraint["name"] for constraint in inspector.get_unique_constraints("repositories")
