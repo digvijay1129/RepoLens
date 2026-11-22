@@ -256,7 +256,10 @@ class AgentApprovalResponse(BaseModel):
     task_id: UUID
     step_id: UUID
     delegation_id: UUID | None = None
+    proposed_execution_id: UUID | None = None
     executed_execution_id: UUID | None = None
+    provider_call_id: str | None = None
+    action_hash: str
     approval_mode: str
     tool_name: str
     tool_arguments: dict
