@@ -201,3 +201,104 @@ export async function getRepositoryConversation(repositoryId, conversationId) {
     "/conversations/" + encodeURIComponent(conversationId),
   );
 }
+
+
+const AGENT_API_BASE = "/api/v1/agents";
+
+export async function getAgentTasks(repositoryId, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (repositoryId) params.set("repository_id", repositoryId);
+  return requestJson(AGENT_API_BASE + "/tasks?" + params.toString());
+}
+
+export async function createAgentTask(payload) {
+  return requestJson(AGENT_API_BASE + "/tasks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAgentTask(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId));
+}
+
+export async function runAgentTask(taskId, payload = {}) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resumeAgentTask(taskId, payload = {}) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/resume", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelAgentTask(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/cancel", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function getAgentTeam(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/team");
+}
+
+export async function getAgentDelegations(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/delegations");
+}
+
+export async function getAgentApprovals(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/approvals");
+}
+
+export async function getAgentToolExecutions(taskId) {
+  return requestJson(AGENT_API_BASE + "/tasks/" + encodeURIComponent(taskId) + "/tool-executions");
+}
+
+export async function approveAgentAction(approvalId, comment = "") {
+  return requestJson(AGENT_API_BASE + "/approvals/" + encodeURIComponent(approvalId) + "/approve", {
+    method: "POST",
+    body: JSON.stringify({ comment: comment || null }),
+  });
+}
+
+export async function denyAgentAction(approvalId, comment = "") {
+  return requestJson(AGENT_API_BASE + "/approvals/" + encodeURIComponent(approvalId) + "/deny", {
+    method: "POST",
+    body: JSON.stringify({ comment: comment || null }),
+  });
+}
+
+export async function getRepositoryMemories(repositoryId, options = {}) {
+  const params = new URLSearchParams({ limit: String(options.limit || 50) });
+  if (options.query) params.set("query", options.query);
+  if (options.memoryType) params.set("memory_type", options.memoryType);
+  if (options.includeInactive) params.set("include_inactive", "true");
+  return requestJson(
+    AGENT_API_BASE + "/repositories/" + encodeURIComponent(repositoryId) + "/memories?" + params.toString(),
+  );
+}
+
+export async function createRepositoryMemory(repositoryId, payload) {
+  return requestJson(
+    AGENT_API_BASE + "/repositories/" + encodeURIComponent(repositoryId) + "/memories",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function updateRepositoryMemory(memoryId, payload) {
+  return requestJson(AGENT_API_BASE + "/memories/" + encodeURIComponent(memoryId), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRepositoryMemory(memoryId) {
+  return requestJson(AGENT_API_BASE + "/memories/" + encodeURIComponent(memoryId), {
+    method: "DELETE",
+  });
+}
