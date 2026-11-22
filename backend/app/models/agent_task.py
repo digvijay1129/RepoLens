@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -35,10 +36,14 @@ class AgentTask(Base):
             name="uq_agent_tasks_id_user_repository",
         ),
         CheckConstraint(
-            "status IN ('queued','planning','planned','running','awaiting_approval','completed','failed','cancelled')",
+            "status IN ('queued','planning','planned','running','paused','awaiting_approval','completed','failed','cancelled')",
             name="status_allowed",
         ),
         CheckConstraint("max_steps BETWEEN 1 AND 20", name="max_steps_valid"),
+        CheckConstraint("max_tool_calls BETWEEN 1 AND 40", name="max_tool_calls_valid"),
+        CheckConstraint("max_retries_per_step BETWEEN 0 AND 2", name="max_retries_per_step_valid"),
+        CheckConstraint("total_tool_calls >= 0", name="total_tool_calls_nonnegative"),
+        CheckConstraint("total_retries >= 0", name="total_retries_nonnegative"),
         CheckConstraint("length(goal) BETWEEN 8 AND 4000", name="goal_length_valid"),
         Index("ix_agent_tasks_user_created", "user_id", "created_at"),
         Index("ix_agent_tasks_repository_created", "repository_id", "created_at"),
@@ -56,6 +61,13 @@ class AgentTask(Base):
         String(24), nullable=False, default="queued", server_default="queued"
     )
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False, default=8, server_default="8")
+    max_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=20, server_default="20")
+    max_retries_per_step: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    total_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    total_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    final_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    execution_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     latest_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
