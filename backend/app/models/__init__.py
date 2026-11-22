@@ -1,5 +1,8 @@
 """Import all models here so SQLAlchemy and Alembic discover their tables."""
 
+from app.models.agent_plan import AgentPlan
+from app.models.agent_step import AgentStep
+from app.models.agent_task import AgentTask
 from app.models.chat_conversation import ChatConversation
 from app.models.chat_message import ChatMessage
 from app.models.indexing_job import IndexingJob
@@ -16,4 +19,7 @@ __all__ = [
     "IndexingJob",
     "ChatConversation",
     "ChatMessage",
+    "AgentTask",
+    "AgentPlan",
+    "AgentStep",
 ]
