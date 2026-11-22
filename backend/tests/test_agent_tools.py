@@ -86,7 +86,7 @@ async def test_openai_compatible_tool_call_response_is_parsed_and_validated():
     )
     observed = {}
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         observed["payload"] = json.loads(request.content)
         return httpx.Response(
             200,
@@ -144,7 +144,7 @@ async def test_openai_compatible_tool_call_rejects_multiple_function_calls():
         llm_max_retries=0,
     )
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json={
@@ -198,7 +198,7 @@ async def test_openai_compatible_tool_call_rejects_malformed_json_arguments():
         llm_max_retries=0,
     )
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json={
