@@ -174,3 +174,31 @@ def test_agent_api_routes_are_registered_in_openapi():
     )
     assert "/api/v1/agents/memories/{memory_id}" in paths
     assert {"patch", "delete"} <= set(paths["/api/v1/agents/memories/{memory_id}"])
+    assert "/api/v1/agents/tasks/{task_id}/team" in paths
+    assert "get" in paths["/api/v1/agents/tasks/{task_id}/team"]
+    assert "/api/v1/agents/tasks/{task_id}/delegations" in paths
+    assert "get" in paths["/api/v1/agents/tasks/{task_id}/delegations"]
+
+
+
+def test_specialist_router_assigns_all_fixed_roles_deterministically():
+    from types import SimpleNamespace
+
+    from app.agents.team import route_step_to_specialist
+
+    cases = [
+        ("Find authentication entry points", "Identify relevant modules and file locations.", "research"),
+        ("Review token validation", "Analyze the authentication control flow and security checks.", "code_analysis"),
+        ("Map system architecture", "Document component boundaries and data flow.", "architecture"),
+        ("Debug failing integration test", "Trace the traceback and identify a likely regression.", "debugging"),
+        ("Document API usage", "Prepare a developer guide and README reference.", "documentation"),
+    ]
+    for title, description, expected in cases:
+        step = SimpleNamespace(
+            title=title,
+            description=description,
+            rationale="Produce evidence-based findings for the coordinator.",
+            expected_output="A concise result with repository citations.",
+            suggested_tool="search_code",
+        )
+        assert route_step_to_specialist(step).key == expected
