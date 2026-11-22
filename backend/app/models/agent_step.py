@@ -2,9 +2,19 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -25,6 +35,8 @@ class AgentStep(Base):
             name="fk_agent_steps_plan_owner",
             ondelete="CASCADE",
         ),
+        UniqueConstraint("task_id", "position", name="uq_agent_steps_task_position"),
+        UniqueConstraint("task_id", "step_key", name="uq_agent_steps_task_step_key"),
         CheckConstraint("position >= 1", name="position_positive"),
         CheckConstraint(
             "status IN ('pending','ready','running','succeeded','failed','skipped','blocked')",
@@ -46,9 +58,23 @@ class AgentStep(Base):
     expected_output: Mapped[str] = mapped_column(String(500), nullable=False)
     suggested_tool: Mapped[str | None] = mapped_column(String(80), nullable=True)
     depends_on: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
-    task = relationship("AgentTask", back_populates="steps")
-    plan = relationship("AgentPlan", back_populates="steps")
+    task = relationship(
+        "AgentTask",
+        back_populates="steps",
+        foreign_keys=[task_id, user_id, repository_id],
+    )
+    plan = relationship(
+        "AgentPlan",
+        back_populates="steps",
+        foreign_keys=[plan_id, task_id, user_id],
+    )
