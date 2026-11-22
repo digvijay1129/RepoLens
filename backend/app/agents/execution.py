@@ -91,6 +91,7 @@ async def execute_agent_step(
     step_key: str,
     user_id: uuid.UUID,
     instruction: str | None = None,
+    observations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Select and execute exactly one allowlisted read-only tool for one plan step."""
     task = db.scalar(
@@ -100,8 +101,10 @@ async def execute_agent_step(
     )
     if task is None:
         raise AgentStepNotFoundError("Agent task was not found.")
-    if task.status != AgentTaskStatus.PLANNED.value:
-        raise AgentExecutionConflictError("Only planned tasks can execute individual steps in Phase 2.")
+    if task.status not in {AgentTaskStatus.PLANNED.value, AgentTaskStatus.RUNNING.value}:
+        raise AgentExecutionConflictError("Only planned or running tasks can execute an individual step.")
+    if task.total_tool_calls >= task.max_tool_calls:
+        raise AgentExecutionConflictError("The task has reached its maximum tool-call budget.")
 
     repository = db.scalar(
         select(Repository).where(
@@ -171,6 +174,8 @@ async def execute_agent_step(
         },
     )
     step.status = "running"
+    task.total_tool_calls += 1
+    task.updated_at = datetime.now(timezone.utc)
     db.add(execution)
     db.commit()
     db.refresh(execution)
@@ -182,6 +187,7 @@ async def execute_agent_step(
             step,
             registry,
             instruction=instruction,
+            observations=observations,
         )
         definition = registry.get(selected.name)
         execution.provider_call_id = selected.call_id
