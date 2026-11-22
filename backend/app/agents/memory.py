@@ -121,7 +121,10 @@ def _memory_score(
     score *= max(0.25, min(1.0, memory.confidence))
     if memory.source_commit_sha and current_commit_sha and memory.source_commit_sha != current_commit_sha:
         score *= 0.65
-    age_days = max(0.0, (_utcnow() - memory.updated_at.replace(tzinfo=timezone.utc) if memory.updated_at.tzinfo is None else _utcnow() - memory.updated_at).total_seconds() / 86400)
+    updated_at = memory.updated_at or memory.created_at or _utcnow()
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    age_days = max(0.0, (_utcnow() - updated_at).total_seconds() / 86400)
     score *= max(0.65, 1.0 - (age_days / 365.0) * 0.35)
     return score
 
@@ -434,7 +437,7 @@ def capture_tool_execution_memory(
         file_path = str(output.get("file_path") or execution.tool_input.get("arguments", {}).get("file_path") or "")[:500]
         citation = output.get("citation_url")
         content = (
-            f"Source evidence for task '{task.goal[:180]}' was inspected in {file_path} "
+            f"Source evidence for step '{step.title[:120]}' was inspected in {file_path} "
             f"(lines {output.get('requested_start_line', 1)}–{output.get('requested_end_line', '?')}). "
             "The original source excerpt is intentionally not copied into memory."
         )
@@ -485,6 +488,7 @@ def capture_tool_execution_memory(
                 AgentMemory.user_id == user_id,
                 AgentMemory.repository_id == repository.id,
                 AgentMemory.is_active.is_(True),
+                (AgentMemory.expires_at.is_(None) | (AgentMemory.expires_at > now)),
             )
         ) or 0
     )
