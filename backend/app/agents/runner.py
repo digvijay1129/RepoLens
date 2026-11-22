@@ -17,6 +17,7 @@ from app.agents.execution import (
 )
 from app.agents.schemas import AgentTaskStatus
 from app.agents.service import serialize_task
+from app.agents.team_service import get_task_team
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
 from app.models.agent_tool_execution import AgentToolExecution
@@ -113,6 +114,7 @@ def _complete_task(db: Session, task: AgentTask, steps: list[AgentStep]) -> dict
                 "result": execution.tool_output,
             }
 
+    team_view = get_task_team(db, task_id=task.id, user_id=task.user_id)
     task.final_result = {
         "goal": task.goal,
         "summary": plan.summary if plan else "The planned repository task completed.",
@@ -122,6 +124,22 @@ def _complete_task(db: Session, task: AgentTask, steps: list[AgentStep]) -> dict
             for step in sorted(steps, key=lambda item: item.position)
             if step.step_key in latest_by_step
         ],
+        "team": {
+            "coordinator": team_view["coordinator"]["name"],
+            "specialists": team_view["specialists"],
+            "step_assignments": team_view["step_assignments"],
+            "delegation_count": team_view["delegation_count"],
+            "findings": [
+                {
+                    "specialist": item["specialist_name"],
+                    "step_key": item["assignment_context"].get("step_key"),
+                    "status": item["status"],
+                    "summary": item["result_summary"],
+                }
+                for item in team_view["delegations"]
+                if item["status"] == "succeeded"
+            ],
+        },
         "execution": {
             "status": "completed",
             "tool_calls": task.total_tool_calls,
