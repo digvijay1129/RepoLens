@@ -159,8 +159,42 @@ async def run_agent_task(
     )
     if task is None:
         raise AgentRunNotFoundError("Agent task was not found.")
-    if task.status not in {AgentTaskStatus.PLANNED.value, AgentTaskStatus.PAUSED.value}:
-        raise AgentRunConflictError("Only planned or paused tasks can be started or resumed.")
+    if task.status not in {
+        AgentTaskStatus.PLANNED.value,
+        AgentTaskStatus.PAUSED.value,
+        AgentTaskStatus.RUNNING.value,
+    }:
+        raise AgentRunConflictError("Only planned, paused, or interrupted tasks can be started or resumed.")
+
+    if task.status == AgentTaskStatus.RUNNING.value:
+        last_update = task.updated_at
+        if last_update.tzinfo is None:
+            last_update = last_update.replace(tzinfo=timezone.utc)
+        if (_utcnow() - last_update).total_seconds() <= 240:
+            raise AgentRunConflictError("This agent task already has an active run.")
+        # A process can stop after persisting 'running'. Mark its unfinished call
+        # and step as failed so a retry can safely re-read the immutable snapshot.
+        interrupted_calls = db.scalars(
+            select(AgentToolExecution).where(
+                AgentToolExecution.task_id == task.id,
+                AgentToolExecution.user_id == user_id,
+                AgentToolExecution.status == "running",
+            )
+        ).all()
+        for call in interrupted_calls:
+            call.status = "failed"
+            call.error_message = "Execution was interrupted before the tool result was committed."
+            call.finished_at = _utcnow()
+        interrupted_steps = db.scalars(
+            select(AgentStep).where(
+                AgentStep.task_id == task.id,
+                AgentStep.user_id == user_id,
+                AgentStep.status == "running",
+            )
+        ).all()
+        for interrupted_step in interrupted_steps:
+            interrupted_step.status = "failed"
+            interrupted_step.updated_at = _utcnow()
 
     repository = db.scalar(
         select(Repository).where(
@@ -199,11 +233,6 @@ async def run_agent_task(
         if task.status != AgentTaskStatus.RUNNING.value:
             return serialize_task(task)
 
-        if time.monotonic() - run_started >= max_runtime_seconds:
-            return _pause_task(db, task, "Run-time budget reached. Resume the task to continue.")
-        if task.total_tool_calls >= task.max_tool_calls:
-            return _pause_task(db, task, "Tool-call budget reached. Increase the budget and resume to continue.")
-
         steps = db.scalars(
             select(AgentStep)
             .where(
@@ -218,6 +247,11 @@ async def run_agent_task(
 
         if all(step.status == "succeeded" for step in steps):
             return _complete_task(db, task, steps)
+
+        if time.monotonic() - run_started >= max_runtime_seconds:
+            return _pause_task(db, task, "Run-time budget reached. Resume the task to continue.")
+        if task.total_tool_calls >= task.max_tool_calls:
+            return _pause_task(db, task, "Tool-call budget reached. Increase the budget and resume to continue.")
 
         status_by_key = {step.step_key: step.status for step in steps}
         ready_step = next(
