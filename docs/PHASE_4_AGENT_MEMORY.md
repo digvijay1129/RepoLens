@@ -50,7 +50,7 @@ The memory capture path deliberately does **not** copy raw source excerpts into 
 
 Users can add durable architecture notes, conventions, design decisions, troubleshooting notes and general repository notes. User-created memories do not expire unless an expiry is explicitly supplied. Each active repository is limited to 250 memories, including both user and automatic records. Each memory is bounded to 6,000 characters, 12 tags, and a small citation-reference list.
 
-Users can edit allowed fields and permanently delete their memories. Ownership, origin, task provenance and execution provenance are not writable through the public API.
+Users can edit allowed fields, archive/restore memories with `is_active`, and permanently delete memories. Archived and expired records are excluded from normal retrieval but can be inspected through `include_inactive=true` for cleanup. Ownership, origin, task provenance and execution provenance are not writable through the public API.
 
 ## Retrieval and agent context
 
@@ -100,7 +100,7 @@ Example:
 
 `PATCH /api/v1/agents/memories/{memory_id}`
 
-Only `memory_type`, `title`, `content`, `tags`, `importance`, `confidence` and `expires_at` are editable. Send `"expires_at": null` to remove an expiry date.
+Only `memory_type`, `title`, `content`, `tags`, `importance`, `confidence`, `is_active` and `expires_at` are editable. Set `"is_active": false` to archive or `true` to restore. Send `"expires_at": null` to remove an expiry date.
 
 ### Permanently delete a memory
 
