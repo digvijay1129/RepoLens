@@ -9,13 +9,13 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register models for metadata assertions
 
 
-def test_alembic_has_a_linear_nine_revision_history() -> None:
+def test_alembic_has_a_linear_ten_revision_history() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
     revisions = {revision.revision: revision for revision in script.walk_revisions()}
 
-    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007", "20261122_0008", "20261122_0009"}
+    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007", "20261122_0008", "20261122_0009", "20261122_0010"}
     assert revisions["20261025_0001"].down_revision is None
     assert revisions["20261025_0002"].down_revision == "20261025_0001"
     assert revisions["20261025_0003"].down_revision == "20261025_0002"
@@ -25,7 +25,8 @@ def test_alembic_has_a_linear_nine_revision_history() -> None:
     assert revisions["20261025_0007"].down_revision == "20261025_0006"
     assert revisions["20261122_0008"].down_revision == "20261025_0007"
     assert revisions["20261122_0009"].down_revision == "20261122_0008"
-    assert script.get_current_head() == "20261122_0009"
+    assert revisions["20261122_0010"].down_revision == "20261122_0009"
+    assert script.get_current_head() == "20261122_0010"
 
 
 def test_model_metadata_has_expected_tables() -> None:
@@ -57,7 +58,11 @@ def test_models_include_phase_3b_persistence_fields() -> None:
 
 
 def test_agent_models_include_owner_scoped_persistence_fields() -> None:
-    assert {"indexed_commit_sha", "goal", "status", "max_steps", "latest_error"} <= set(
+    assert {
+        "indexed_commit_sha", "goal", "status", "max_steps", "max_tool_calls",
+        "max_retries_per_step", "total_tool_calls", "total_retries", "final_result",
+        "execution_started_at", "execution_finished_at", "latest_error",
+    } <= set(
         Base.metadata.tables["agent_tasks"].columns.keys()
     )
     assert {"version", "summary", "completion_criteria", "assumptions", "planner_provider", "planner_model"} <= set(
