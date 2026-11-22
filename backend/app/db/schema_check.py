@@ -112,7 +112,9 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     },
     "agent_tasks": {
         "id", "user_id", "repository_id", "indexed_commit_sha", "goal",
-        "status", "max_steps", "latest_error", "created_at", "updated_at",
+        "status", "max_steps", "max_tool_calls", "max_retries_per_step",
+        "total_tool_calls", "total_retries", "final_result", "execution_started_at",
+        "execution_finished_at", "latest_error", "created_at", "updated_at",
     },
     "agent_plans": {
         "id", "task_id", "user_id", "repository_id", "version", "summary",
@@ -228,6 +230,10 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "check": {
             "ck_agent_tasks_status_allowed",
             "ck_agent_tasks_max_steps_valid",
+            "ck_agent_tasks_max_tool_calls_valid",
+            "ck_agent_tasks_max_retries_per_step_valid",
+            "ck_agent_tasks_total_tool_calls_nonnegative",
+            "ck_agent_tasks_total_retries_nonnegative",
             "ck_agent_tasks_goal_length_valid",
         },
         "foreign": {"fk_agent_tasks_user_id_users", "fk_agent_tasks_repository_owner"},
