@@ -265,6 +265,7 @@ def create_repository_memory(
         )
     )
     if existing is not None:
+        existing.origin = "user"
         existing.title = title.strip()
         existing.content = normalized_content
         existing.tags = normalized_tags
