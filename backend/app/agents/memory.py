@@ -331,7 +331,7 @@ def update_repository_memory(
     )
     if memory is None:
         raise AgentMemoryNotFoundError("Repository memory was not found.")
-    allowed = {"memory_type", "title", "content", "tags", "importance", "confidence", "expires_at"}
+    allowed = {"memory_type", "title", "content", "tags", "importance", "confidence", "is_active", "expires_at"}
     for key, value in updates.items():
         if key in allowed and (value is not None or key == "expires_at"):
             if key == "tags":
