@@ -30,7 +30,7 @@ def proposal_payload():
                 "rationale": "The summary should be grounded in files found during inspection.",
                 "expected_output": "A source-grounded authentication overview.",
                 "depends_on": ["inspect_auth"],
-                "suggested_tool": "draft_report",
+                "suggested_tool": "repository_overview",
             },
         ],
         "completion_criteria": ["Authentication entry points are identified.", "Findings include source evidence."],
