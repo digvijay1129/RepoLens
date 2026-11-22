@@ -9,7 +9,7 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register models for metadata assertions
 
 
-def test_alembic_has_a_linear_thirteen_revision_history() -> None:
+def test_alembic_has_a_linear_fourteen_revision_history() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
@@ -114,4 +114,16 @@ def test_agent_approval_model_has_auditable_immutable_action_fields() -> None:
         "provider_call_id", "action_hash", "specialist_key", "policy_reason",
         "status", "requested_at", "expires_at", "decided_at",
         "decided_by_user_id", "decision_comment",
+    } <= columns
+
+
+
+def test_agent_approval_model_has_auditable_action_and_decision_fields() -> None:
+    columns = set(Base.metadata.tables["agent_approval_requests"].columns.keys())
+    assert {
+        "task_id", "step_id", "user_id", "repository_id", "delegation_id",
+        "proposed_execution_id", "executed_execution_id", "approval_mode",
+        "tool_name", "tool_arguments", "provider_call_id", "action_hash",
+        "specialist_key", "policy_reason", "status", "requested_at", "expires_at",
+        "decided_at", "decided_by_user_id", "decision_comment",
     } <= columns
