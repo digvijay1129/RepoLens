@@ -386,6 +386,7 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "fk_agent_approval_requests_task_owner",
             "fk_agent_approval_requests_step_owner",
             "fk_agent_approval_requests_delegation",
+            "fk_agent_approval_requests_proposed_execution",
             "fk_agent_approval_requests_executed_execution",
             "fk_agent_approval_requests_decided_by_user_id_users",
         },
