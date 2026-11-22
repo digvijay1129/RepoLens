@@ -202,3 +202,48 @@ def test_specialist_router_assigns_all_fixed_roles_deterministically():
             suggested_tool="search_code",
         )
         assert route_step_to_specialist(step).key == expected
+
+
+
+@pytest.mark.asyncio
+async def test_tool_selection_includes_fixed_specialist_and_coordinator_prompts(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.agents import tool_calling
+    from app.agents.team import SPECIALISTS
+
+    captured = {}
+
+    async def fake_complete(messages, tools):
+        captured["messages"] = messages
+        captured["tools"] = tools
+        return LLMFunctionCall(
+            call_id="specialist-prompt-test",
+            name="repository_overview",
+            arguments={},
+        )
+
+    class FakeRegistry:
+        def openai_tool_schemas(self):
+            return [{"type": "function", "function": {"name": "repository_overview"}}]
+
+    monkeypatch.setattr(tool_calling, "complete_chat_with_tools", fake_complete)
+    task = SimpleNamespace(goal="Map repository boundaries and service integrations.")
+    step = SimpleNamespace(
+        title="Map system architecture",
+        description="Identify component responsibilities and data flow.",
+        expected_output="An evidence-backed component map.",
+    )
+    selected = await tool_calling.select_tool_call(
+        task,
+        step,
+        FakeRegistry(),
+        specialist=SPECIALISTS["architecture"],
+    )
+
+    system_prompt = captured["messages"][0]["content"]
+    assert selected.name == "repository_overview"
+    assert "Main Coordinator" in system_prompt
+    assert "Architecture Agent" in system_prompt
+    assert "data flow" in system_prompt
+    assert captured["tools"][0]["function"]["name"] == "repository_overview"
