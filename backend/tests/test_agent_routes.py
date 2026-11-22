@@ -1206,4 +1206,4 @@ def test_failed_specialist_delegation_is_persisted_for_coordinator_review(
     assert len(delegations.json()) == 1
     assert delegations.json()[0]["specialist_key"] == "research"
     assert delegations.json()[0]["status"] == "failed"
-    assert "Unknown" in delegations.json()[0]["error_message"] or "registered" in delegations.json()[0]["error_message"]
+    assert "not available" in delegations.json()[0]["error_message"]
