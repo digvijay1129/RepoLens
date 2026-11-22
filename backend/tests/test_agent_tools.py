@@ -12,6 +12,7 @@ from app.agents.tools.repository_tools import (
     InspectSourceArguments,
     ListIndexedFilesArguments,
     RepositoryOverviewArguments,
+    SearchCodeArguments,
     inspect_source,
     list_indexed_files,
     repository_overview,
@@ -306,7 +307,7 @@ async def test_repository_tools_read_only_over_the_selected_indexed_snapshot(ind
     assert inspected["returned_line_count"] == 2
     assert "1: def login(token):" in inspected["source"]
     assert "2:     return validate_token(token)" in inspected["source"]
-    assert inspected["commit_sha"] == "a" * 40 if "commit_sha" in inspected else True
+    assert "blob/" + "a" * 40 in inspected["citation_url"]
 
     found = await search_code(
         context,
@@ -319,11 +320,15 @@ async def test_repository_tools_read_only_over_the_selected_indexed_snapshot(ind
 @pytest.mark.asyncio
 async def test_repository_tool_cannot_read_another_users_repository(indexed_tool_context):
     context = indexed_tool_context
-    original_user = context.user_id
-    context.user_id = __import__("uuid").uuid4()
+    from uuid import uuid4
+
+    other_context = AgentToolContext(
+        db=context.db,
+        repository=context.repository,
+        user_id=uuid4(),
+    )
     with pytest.raises(AgentToolError, match="not found"):
-        await repository_overview(context, RepositoryOverviewArguments())
-    context.user_id = original_user
+        await repository_overview(other_context, RepositoryOverviewArguments())
 
 
 def test_tool_registry_rejects_non_read_only_registration():
