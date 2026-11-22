@@ -14,6 +14,7 @@ class AgentTaskStatus(str, Enum):
     PLANNING = "planning"
     PLANNED = "planned"
     RUNNING = "running"
+    PAUSED = "paused"
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -126,6 +127,23 @@ class AgentTaskDetail(AgentTaskSummary):
     plan: dict | None = None
     steps: list[dict]
     latest_error: str | None = None
+    max_tool_calls: int = 20
+    max_retries_per_step: int = 1
+    total_tool_calls: int = 0
+    total_retries: int = 0
+    final_result: dict | None = None
+    execution_started_at: str | None = None
+    execution_finished_at: str | None = None
+
+
+class AgentRunRequest(BaseModel):
+    """Strict per-run execution budget and bounded retry configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_tool_calls: int | None = Field(default=None, ge=1, le=40)
+    max_retries_per_step: int = Field(default=1, ge=0, le=2)
+    max_runtime_seconds: int = Field(default=90, ge=5, le=180)
 
 
 class AgentStepExecutionRequest(BaseModel):
