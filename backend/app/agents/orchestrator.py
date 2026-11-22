@@ -8,8 +8,6 @@ from dataclasses import dataclass
 
 from app.agents.planner import create_plan
 from app.agents.schemas import AgentPlanProposal
-from app.core.config import Settings
-
 
 @dataclass(frozen=True)
 class AgentPlanningResult:
