@@ -303,7 +303,18 @@ async def run_agent_task(
             db.refresh(task)
             return _fail_task(db, task, str(exc))
         except Exception:
-            # execute_agent_step records the failed call safely before re-raising.
-            # The loop applies the per-step retry budget on the next iteration.
+            # Continue only when the execution service committed a failed attempt.
+            # If no attempt was persisted, fail closed rather than spin indefinitely.
             db.refresh(task)
+            persisted_failures = _step_failed_attempts(
+                db,
+                task_id=task.id,
+                step_id=ready_step.id,
+            )
+            if persisted_failures <= failed_attempts:
+                return _fail_task(
+                    db,
+                    task,
+                    "The step failed before an auditable tool-attempt record could be saved.",
+                )
             continue
