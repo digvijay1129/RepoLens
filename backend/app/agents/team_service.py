@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.team import COORDINATOR_PROMPT, SPECIALISTS, summarize_team_assignments
+from app.agents.team import SPECIALISTS, summarize_team_assignments
 from app.models.agent_delegation import AgentDelegation
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
@@ -114,11 +114,10 @@ def get_task_team(
                 "name": specialist.display_name,
                 "mission": specialist.mission,
                 "capabilities": list(specialist.capability_tags),
-                "assigned_steps": len({
-                    step_key_by_id[item.step_id]
-                    for item in specialist_records
-                    if item.step_id in step_key_by_id
-                }),
+                "assigned_steps": sum(
+                    assignment_by_step[step.step_key]["specialist_key"] == key
+                    for step in steps
+                ),
                 "completed_delegations": sum(item.status == "succeeded" for item in specialist_records),
                 "failed_delegations": sum(item.status == "failed" for item in specialist_records),
             }
@@ -147,7 +146,6 @@ def get_task_team(
             "key": "coordinator",
             "name": "Main Coordinator Agent",
             "mission": "Route plan steps to specialists, enforce shared execution boundaries, and consolidate their evidence-backed findings.",
-            "policy": COORDINATOR_PROMPT,
         },
         "specialists": specialist_items,
         "step_assignments": step_items,
