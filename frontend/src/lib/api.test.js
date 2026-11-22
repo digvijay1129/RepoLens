@@ -1,3 +1,10 @@
+import {
+  approveAgentAction,
+  createAgentTask,
+  denyAgentAction,
+  getAgentApprovals,
+  getRepositoryMemories,
+} from "./api.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearAccessToken,
@@ -249,3 +256,73 @@ describe("RepoLens API client", () => {
     expect(fetchMock.mock.calls[1][0]).toMatch(/\/repositories\/saved\/repo-1\/conversations$/);
     expect(fetchMock.mock.calls[2][0]).toMatch(/\/repositories\/saved\/repo-1\/conversations\/conversation-1$/);
   });
+
+
+
+describe("Agent dashboard API client", () => {
+  it("creates a task with an explicit human approval policy", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "task-1", approval_mode: "approve_each", status: "planned" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    setAccessToken("signed-token");
+
+    const task = await createAgentTask({
+      repository_id: "repo-1",
+      goal: "Review authentication and token validation",
+      approval_mode: "approve_each",
+      max_steps: 8,
+    });
+
+    expect(task.approval_mode).toBe("approve_each");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/v1\/agents\/tasks$/);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).approval_mode).toBe("approve_each");
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer signed-token");
+  });
+
+  it("uses the approval endpoints and sends only the human decision comment", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "approval-1", status: "approved" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: "approval-1", status: "denied" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await approveAgentAction("approval-1", "Reviewed this action.");
+    await denyAgentAction("approval-1", "Do not proceed.");
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/v1\/agents\/approvals\/approval-1\/approve$/);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ comment: "Reviewed this action." });
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/v1\/agents\/approvals\/approval-1\/deny$/);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ comment: "Do not proceed." });
+  });
+
+  it("lists approval records and repository memories with URL-encoded filters", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAgentApprovals("task/1");
+    await getRepositoryMemories("repo-1", {
+      query: "auth rules",
+      includeInactive: true,
+      limit: 75,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/v1\/agents\/tasks\/task%2F1\/approvals$/);
+    const memoryUrl = new URL(fetchMock.mock.calls[1][0]);
+    expect(memoryUrl.pathname).toMatch(/\/agents\/repositories\/repo-1\/memories$/);
+    expect(memoryUrl.searchParams.get("query")).toBe("auth rules");
+    expect(memoryUrl.searchParams.get("include_inactive")).toBe("true");
+    expect(memoryUrl.searchParams.get("limit")).toBe("75");
+  });
+});
