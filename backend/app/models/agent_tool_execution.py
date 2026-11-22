@@ -35,7 +35,7 @@ class AgentToolExecution(Base):
             name="fk_agent_tool_executions_step_owner",
             ondelete="CASCADE",
         ),
-        CheckConstraint("status IN ('running','succeeded','failed')", name="status_allowed"),
+        CheckConstraint("status IN ('running','awaiting_approval','succeeded','failed')", name="status_allowed"),
         CheckConstraint("duration_ms IS NULL OR duration_ms >= 0", name="duration_nonnegative"),
         Index("ix_agent_tool_executions_task_created", "task_id", "created_at"),
         Index("ix_agent_tool_executions_user_created", "user_id", "created_at"),
