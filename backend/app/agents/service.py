@@ -56,6 +56,17 @@ def serialize_task(task: AgentTask, *, include_plan: bool = True) -> dict[str, A
         "created_at": _iso(task.created_at),
         "updated_at": _iso(task.updated_at),
         "latest_error": task.latest_error,
+        "max_tool_calls": task.max_tool_calls,
+        "max_retries_per_step": task.max_retries_per_step,
+        "total_tool_calls": task.total_tool_calls,
+        "total_retries": task.total_retries,
+        "final_result": task.final_result,
+        "execution_started_at": (
+            task.execution_started_at.isoformat() if task.execution_started_at else None
+        ),
+        "execution_finished_at": (
+            task.execution_finished_at.isoformat() if task.execution_finished_at else None
+        ),
         "plan": (
             {
                 "summary": plan.summary,
@@ -180,7 +191,7 @@ def cancel_agent_task(db: Session, *, task_id: uuid.UUID, user_id: uuid.UUID) ->
     try:
         state.transition_to(AgentTaskStatus.CANCELLED)
     except ValueError as exc:
-        raise ValueError("Only queued or planned tasks can be cancelled in Phase 1.") from exc
+        raise ValueError("Only non-terminal agent tasks can be cancelled.") from exc
     task.status = state.status.value
     task.updated_at = datetime.now(timezone.utc)
     db.commit()
