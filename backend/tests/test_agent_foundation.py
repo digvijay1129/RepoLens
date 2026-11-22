@@ -211,6 +211,7 @@ async def test_tool_selection_includes_fixed_specialist_and_coordinator_prompts(
 
     from app.agents import tool_calling
     from app.agents.team import SPECIALISTS
+    from app.services.llm_tools import LLMFunctionCall
 
     captured = {}
 
@@ -243,7 +244,7 @@ async def test_tool_selection_includes_fixed_specialist_and_coordinator_prompts(
 
     system_prompt = captured["messages"][0]["content"]
     assert selected.name == "repository_overview"
-    assert "Main Coordinator" in system_prompt
+    assert "multi-agent coordinator" in system_prompt
     assert "Architecture Agent" in system_prompt
     assert "data flow" in system_prompt
     assert captured["tools"][0]["function"]["name"] == "repository_overview"
