@@ -6,11 +6,23 @@ import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.agents.tools import AgentToolError, build_agent_tool_registry
+from app.agents.tools import AgentToolContext, AgentToolError, AgentToolRegistry, build_agent_tool_registry
+from app.agents.tools.registry import AgentToolDefinition
 from app.agents.tools.repository_tools import (
     InspectSourceArguments,
     ListIndexedFilesArguments,
+    RepositoryOverviewArguments,
+    inspect_source,
+    list_indexed_files,
+    repository_overview,
+    search_code,
 )
+from app.db.base import Base
+from app.models.repository import Repository
+from app.models.repository_chunk import RepositoryChunk
+from app.models.user import User
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.services.llm import LLMProviderError
 from app.services.llm_tools import complete_chat_with_tools
@@ -223,4 +235,110 @@ async def test_openai_compatible_tool_call_rejects_malformed_json_arguments():
             ],
             settings=settings,
             transport=httpx.MockTransport(handler),
+        )
+
+
+
+@pytest.fixture()
+def indexed_tool_context():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    user = User(email="agent-tool-context@example.com")
+    db.add(user)
+    db.flush()
+    repository = Repository(
+        user_id=user.id,
+        github_owner="example",
+        github_name="project",
+        full_name="example/project",
+        canonical_url="https://github.com/example/project",
+        indexing_status="indexed",
+        indexed_commit_sha="a" * 40,
+        selected_branch="main",
+        default_branch="main",
+    )
+    db.add(repository)
+    db.flush()
+    db.add(
+        RepositoryChunk(
+            repository_id=repository.id,
+            user_id=user.id,
+            commit_sha="a" * 40,
+            file_path="backend/auth.py",
+            language="python",
+            chunk_index=0,
+            start_line=1,
+            end_line=3,
+            content_hash="b" * 64,
+            symbol_names="login,validate_token",
+            token_count=12,
+            chunk_text="def login(token):\n    return validate_token(token)\n",
+        )
+    )
+    db.commit()
+    yield AgentToolContext(db=db, repository=repository, user_id=user.id)
+    db.close()
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_repository_tools_read_only_over_the_selected_indexed_snapshot(indexed_tool_context):
+    context = indexed_tool_context
+
+    overview = await repository_overview(context, RepositoryOverviewArguments())
+    assert overview["repository"] == "example/project"
+    assert overview["indexed_file_count"] == 1
+    assert overview["indexed_chunk_count"] == 1
+    assert overview["indexed_commit_sha"] == "a" * 40
+
+    files = await list_indexed_files(
+        context,
+        ListIndexedFilesArguments(prefix="backend", limit=10),
+    )
+    assert files["result_count"] == 1
+    assert files["files"][0]["file_path"] == "backend/auth.py"
+
+    inspected = await inspect_source(
+        context,
+        InspectSourceArguments(file_path="backend/auth.py", start_line=1, end_line=2),
+    )
+    assert inspected["returned_line_count"] == 2
+    assert "1: def login(token):" in inspected["source"]
+    assert "2:     return validate_token(token)" in inspected["source"]
+    assert inspected["commit_sha"] == "a" * 40 if "commit_sha" in inspected else True
+
+    found = await search_code(
+        context,
+        SearchCodeArguments(query="validate_token", mode="keyword", limit=5),
+    )
+    assert found["result_count"] == 1
+    assert found["results"][0]["chunk_id"]
+
+
+@pytest.mark.asyncio
+async def test_repository_tool_cannot_read_another_users_repository(indexed_tool_context):
+    context = indexed_tool_context
+    original_user = context.user_id
+    context.user_id = __import__("uuid").uuid4()
+    with pytest.raises(AgentToolError, match="not found"):
+        await repository_overview(context, RepositoryOverviewArguments())
+    context.user_id = original_user
+
+
+def test_tool_registry_rejects_non_read_only_registration():
+    registry = AgentToolRegistry()
+
+    async def unsafe_handler(context, arguments):
+        return {"executed": True}
+
+    with pytest.raises(ValueError, match="Only read-only tools"):
+        registry.register(
+            AgentToolDefinition(
+                name="modify_repository",
+                description="Modify source files.",
+                arguments_model=RepositoryOverviewArguments,
+                handler=unsafe_handler,
+                read_only=False,
+            )
         )
