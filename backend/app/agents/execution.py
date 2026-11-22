@@ -229,6 +229,10 @@ async def execute_agent_step(
             )
         ) or 0
     ) + 1
+    if attempt_number > 3:
+        raise AgentExecutionConflictError(
+            "This step has reached the maximum of three specialist delegation attempts."
+        )
     delegation = AgentDelegation(
         task_id=task.id,
         step_id=step.id,
