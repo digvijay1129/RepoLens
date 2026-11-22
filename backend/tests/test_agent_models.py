@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 def test_agent_tables_are_registered():
-    assert {"agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories"} <= set(Base.metadata.tables)
+    assert {"agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories", "agent_delegations"} <= set(Base.metadata.tables)
 
 
 def test_agent_metadata_creates_on_sqlite():
@@ -53,3 +53,15 @@ def test_agent_memory_table_is_owner_scoped_and_provenance_aware():
     assert "uq_agent_memories_user_repo_hash" in {
         item.name for item in table.constraints
     }
+
+
+
+def test_agent_delegation_model_has_composite_task_and_step_ownership():
+    table = Base.metadata.tables["agent_delegations"]
+    foreign_names = {item.name for item in table.foreign_key_constraints}
+    assert {
+        "fk_agent_delegations_task_owner",
+        "fk_agent_delegations_step_owner",
+        "fk_agent_delegations_source_execution",
+    } <= foreign_names
+    assert {"specialist_key", "status", "attempt_number"} <= set(table.columns.keys())
