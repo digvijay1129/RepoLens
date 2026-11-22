@@ -123,6 +123,11 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "step_key", "title", "description", "rationale", "expected_output",
         "suggested_tool", "depends_on", "status", "created_at", "updated_at",
     },
+    "agent_tool_executions": {
+        "id", "task_id", "step_id", "user_id", "repository_id", "provider_call_id",
+        "tool_name", "status", "tool_input", "tool_output", "error_message",
+        "duration_ms", "created_at", "finished_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -241,7 +246,11 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
     },
     "agent_steps": {
         "primary": {"pk_agent_steps"},
-        "unique": {"uq_agent_steps_task_position", "uq_agent_steps_task_step_key"},
+        "unique": {
+            "uq_agent_steps_id_task_user",
+            "uq_agent_steps_task_position",
+            "uq_agent_steps_task_step_key",
+        },
         "check": {
             "ck_agent_steps_position_positive",
             "ck_agent_steps_status_allowed",
@@ -250,6 +259,22 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         },
         "foreign": {"fk_agent_steps_task_owner", "fk_agent_steps_plan_owner"},
         "indexes": set(),
+    },
+    "agent_tool_executions": {
+        "primary": {"pk_agent_tool_executions"},
+        "unique": set(),
+        "check": {
+            "ck_agent_tool_executions_status_allowed",
+            "ck_agent_tool_executions_duration_nonnegative",
+        },
+        "foreign": {
+            "fk_agent_tool_executions_task_owner",
+            "fk_agent_tool_executions_step_owner",
+        },
+        "indexes": {
+            "ix_agent_tool_executions_task_created",
+            "ix_agent_tool_executions_user_created",
+        },
     },
 }
 
