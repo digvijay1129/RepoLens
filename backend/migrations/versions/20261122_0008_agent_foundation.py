@@ -99,6 +99,7 @@ def upgrade() -> None:
             name=op.f("ck_agent_steps_status_allowed"),
         ),
         sa.CheckConstraint("length(title) BETWEEN 3 AND 160", name=op.f("ck_agent_steps_title_length_valid")),
+        sa.CheckConstraint("length(step_key) BETWEEN 2 AND 50", name=op.f("ck_agent_steps_step_key_length_valid")),
         sa.ForeignKeyConstraint(
             ["task_id", "user_id", "repository_id"],
             ["agent_tasks.id", "agent_tasks.user_id", "agent_tasks.repository_id"],
