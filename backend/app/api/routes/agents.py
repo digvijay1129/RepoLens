@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,14 @@ from app.agents.execution import (
     list_agent_tools,
     list_tool_executions,
 )
+from app.agents.memory import (
+    AgentMemoryLimitError,
+    AgentMemoryNotFoundError,
+    create_repository_memory,
+    delete_repository_memory,
+    list_repository_memories,
+    update_repository_memory,
+)
 from app.agents.planner import AgentPlanningError
 from app.agents.runner import (
     AgentRunConflictError,
@@ -22,6 +30,9 @@ from app.agents.runner import (
 )
 from app.agents.schemas import (
     AgentGoalRequest,
+    AgentMemoryCreateRequest,
+    AgentMemoryResponse,
+    AgentMemoryUpdateRequest,
     AgentRunRequest,
     AgentStepExecutionRequest,
     AgentTaskStatus,
@@ -272,3 +283,104 @@ async def resume_task(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AgentRunConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+
+@router.get(
+    "/repositories/{repository_id}/memories",
+    response_model=list[AgentMemoryResponse],
+    summary="List and search memories for an owned repository",
+)
+def get_repository_memories(
+    repository_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+    query: str | None = Query(default=None, max_length=1200),
+    memory_type: str | None = Query(default=None),
+    include_inactive: bool = False,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[dict]:
+    try:
+        return list_repository_memories(
+            db,
+            repository_id=repository_id,
+            user_id=current_user.id,
+            query=query,
+            memory_type=memory_type,
+            include_inactive=include_inactive,
+            limit=limit,
+        )
+    except AgentMemoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/repositories/{repository_id}/memories",
+    response_model=AgentMemoryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a user-curated repository memory",
+)
+def create_memory(
+    repository_id: uuid.UUID,
+    body: AgentMemoryCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return create_repository_memory(
+            db,
+            repository_id=repository_id,
+            user_id=current_user.id,
+            memory_type=body.memory_type,
+            title=body.title,
+            content=body.content,
+            tags=body.tags,
+            importance=body.importance,
+            confidence=body.confidence,
+            expires_at=body.expires_at,
+        )
+    except AgentMemoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentMemoryLimitError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/memories/{memory_id}",
+    response_model=AgentMemoryResponse,
+    summary="Update an owned repository memory",
+)
+def patch_memory(
+    memory_id: uuid.UUID,
+    body: AgentMemoryUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return update_repository_memory(
+            db,
+            memory_id=memory_id,
+            user_id=current_user.id,
+            updates=body.model_dump(exclude_unset=True),
+        )
+    except AgentMemoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentMemoryLimitError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/memories/{memory_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Permanently delete an owned repository memory",
+)
+def remove_memory(
+    memory_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> Response:
+    try:
+        delete_repository_memory(db, memory_id=memory_id, user_id=current_user.id)
+    except AgentMemoryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
