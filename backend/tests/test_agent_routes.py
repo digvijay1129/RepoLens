@@ -407,7 +407,7 @@ def test_read_only_tool_catalog_and_execution_are_owner_scoped(
         headers=other["headers"],
     ).status_code == 404
 
-    async def choose_tool(task_arg, step_arg, registry, *, instruction=None):
+    async def choose_tool(task_arg, step_arg, registry, *, instruction=None, observations=None):
         if step_arg.step_key == "find_auth":
             return LLMFunctionCall(
                 call_id="call-overview-1",
@@ -486,7 +486,7 @@ def test_failed_tool_call_is_logged_and_step_can_be_retried(
     )
     task_id = created.json()["id"]
 
-    async def fail_selection(task_arg, step_arg, registry, *, instruction=None):
+    async def fail_selection(task_arg, step_arg, registry, *, instruction=None, observations=None):
         return LLMFunctionCall(
             call_id="call-unknown-tool",
             name="execute_shell",
