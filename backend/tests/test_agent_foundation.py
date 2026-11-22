@@ -1,10 +1,13 @@
 """Tests for Phase 1 agent schemas and deterministic planning policies."""
 
-import pytest
-from pydantic import ValidationError
+import json
 
-from app.agents.planner import AgentPlanningError, validate_plan
+import pytest
+from pydantic import SecretStr, ValidationError
+
+from app.agents.planner import AgentPlanningError, create_plan, validate_plan
 from app.agents.schemas import AgentGoalRequest, AgentPlanProposal
+from app.core.config import Settings
 
 
 def proposal_payload():
@@ -80,3 +83,76 @@ def test_planner_policy_rejects_unregistered_tools():
     proposal = AgentPlanProposal.model_validate(payload)
     with pytest.raises(AgentPlanningError):
         validate_plan(proposal, max_steps=8)
+
+
+
+@pytest.mark.asyncio
+async def test_planner_uses_existing_llm_client_and_returns_structured_plan():
+    settings = Settings(
+        llm_enabled=True,
+        llm_api_key=SecretStr("unit-test-secret"),
+        llm_base_url="https://provider.example/v1",
+        llm_model="unit-test-planner",
+    )
+    captured = {}
+
+    async def fake_completion(messages, *, settings):
+        captured["messages"] = messages
+        captured["model"] = settings.llm_model
+        return json.dumps(proposal_payload())
+
+    proposal, effective_settings = await create_plan(
+        "Review the authentication architecture and summarize the flow.",
+        max_steps=4,
+        settings_factory=lambda: settings,
+        completion_func=fake_completion,
+    )
+
+    assert len(proposal.steps) == 2
+    assert effective_settings.llm_model == "unit-test-planner"
+    assert captured["model"] == "unit-test-planner"
+    assert "Return one JSON object" in captured["messages"][1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_planner_uses_openrouter_override_for_model_metadata():
+    settings = Settings(
+        llm_enabled=True,
+        openrouter_api_key=SecretStr("unit-test-openrouter-secret"),
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_chat_model="provider/agent-planner-test",
+    )
+
+    async def fake_completion(messages, *, settings):
+        assert settings.llm_model == "provider/agent-planner-test"
+        return json.dumps(proposal_payload())
+
+    _, effective_settings = await create_plan(
+        "Inspect repository dependencies and explain the architecture.",
+        max_steps=5,
+        settings_factory=lambda: settings,
+        completion_func=fake_completion,
+    )
+
+    assert effective_settings.llm_model == "provider/agent-planner-test"
+
+
+@pytest.mark.asyncio
+async def test_planner_rejects_non_json_provider_output():
+    settings = Settings(
+        llm_enabled=True,
+        llm_api_key=SecretStr("unit-test-secret"),
+        llm_base_url="https://provider.example/v1",
+        llm_model="unit-test-planner",
+    )
+
+    async def fake_completion(messages, *, settings):
+        return "Here is your plan: run a shell command"
+
+    with pytest.raises(AgentPlanningError):
+        await create_plan(
+            "Investigate this repository for potential bugs.",
+            max_steps=4,
+            settings_factory=lambda: settings,
+            completion_func=fake_completion,
+        )
