@@ -47,7 +47,12 @@ def _tokens(value: str) -> set[str]:
     }
 
 
-def serialize_memory(memory: AgentMemory, *, relevance: float | None = None) -> dict[str, Any]:
+def serialize_memory(
+    memory: AgentMemory,
+    *,
+    relevance: float | None = None,
+    current_commit_sha: str | None = None,
+) -> dict[str, Any]:
     data = {
         "id": str(memory.id),
         "repository_id": str(memory.repository_id),
@@ -71,7 +76,11 @@ def serialize_memory(memory: AgentMemory, *, relevance: float | None = None) -> 
     }
     if relevance is not None:
         data["relevance_score"] = round(relevance, 4)
-        data["snapshot_matches"] = memory.source_commit_sha is None
+        data["snapshot_matches"] = (
+            None
+            if current_commit_sha is None
+            else memory.source_commit_sha is None or memory.source_commit_sha == current_commit_sha
+        )
     return data
 
 
@@ -162,7 +171,10 @@ def retrieve_relevant_memories(
             memory.access_count += 1
             memory.last_accessed_at = now
         db.commit()
-    return [serialize_memory(memory, relevance=score) for memory, score in ranked]
+    return [
+        serialize_memory(memory, relevance=score, current_commit_sha=current_commit_sha)
+        for memory, score in ranked
+    ]
 
 
 def list_repository_memories(
