@@ -39,6 +39,7 @@ class AgentTask(Base):
             "status IN ('queued','planning','planned','running','paused','awaiting_approval','completed','failed','cancelled')",
             name="status_allowed",
         ),
+        CheckConstraint("approval_mode IN ('auto','approve_each')", name="approval_mode_allowed"),
         CheckConstraint("max_steps BETWEEN 1 AND 20", name="max_steps_valid"),
         CheckConstraint("max_tool_calls BETWEEN 1 AND 40", name="max_tool_calls_valid"),
         CheckConstraint("max_retries_per_step BETWEEN 0 AND 2", name="max_retries_per_step_valid"),
@@ -59,6 +60,9 @@ class AgentTask(Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="queued", server_default="queued"
+    )
+    approval_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="auto", server_default="auto"
     )
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False, default=8, server_default="8")
     max_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=20, server_default="20")
