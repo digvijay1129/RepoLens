@@ -170,6 +170,17 @@ describe("Agent dashboard", () => {
     ));
   });
 
+  it("opens repository memory before the first agent task exists", async () => {
+    const user = userEvent.setup();
+    getAgentTasks.mockResolvedValue([]);
+    renderDashboard();
+
+    await screen.findByRole("heading", { name: "Your autonomous workspace" });
+    await user.click(screen.getByRole("button", { name: /manage repository memory/i }));
+    expect(await screen.findByRole("heading", { name: "Repository memory" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save memory/i })).toBeInTheDocument();
+  });
+
   it("saves user-curated repository memory", async () => {
     const user = userEvent.setup();
     getAgentTasks.mockResolvedValue([task]);
