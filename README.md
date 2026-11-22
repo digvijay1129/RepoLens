@@ -101,7 +101,19 @@ Search results include ranked source snippets and repository/file/line context s
 
 The LLM is used to explain retrieved code; it is not used to fabricate repository contents. Generated answers can still be wrong, so verify important statements against their citations.
 
-### Autonomous multi-agent repository assistant with human approval (Phases 1–6)\n\n- Create authenticated tasks and validated dependency-aware plans.\n- Coordinate five fixed research, code-analysis, architecture, debugging and documentation specialists.\n- Execute bounded multi-step plans with memory, retry, cancellation and resume checkpoints.\n- Retain specialist delegation history and coordinator findings.\n- Configure task execution as automatic or owner-approval-required for every tool call.\n- Review exact proposed tool arguments, approve or deny, and inspect the permanent decision history.\n\nPhase 6 adds one-time human approval gates. In `approve_each` mode a proposed tool call is stored and the task pauses before the tool handler is invoked. The owner approves the exact validated tool name/arguments, then resumes the task; the stored action executes once. Denial, expiry, cancellation or repository snapshot changes stop the task safely. The existing tools remain read-only.\n\n### Retrieval evaluation
+### Autonomous multi-agent repository assistant and dashboard (Phases 1–7)
+
+- Create authenticated tasks and validated dependency-aware plans.
+- Coordinate five fixed research, code-analysis, architecture, debugging and documentation specialists.
+- Execute bounded multi-step plans with persistent memory, retry, cancellation and resume checkpoints.
+- Retain specialist delegation history and coordinator findings.
+- Configure task execution as automatic or owner-approval-required for every tool call.
+- Review exact proposed tool arguments, approve or deny, and inspect the permanent decision history.
+- Manage agent tasks, specialist progress, approvals, repository memory and tool audit records in the React workspace at `/agents`.
+
+Phase 6 adds one-time human approval gates. In `approve_each` mode a proposed tool call is stored and the task pauses before the tool handler is invoked. The owner approves the exact validated tool name/arguments, then resumes the task; the stored action executes once. Denial, expiry, cancellation or repository snapshot changes stop the task safely. Phase 7 provides an integrated responsive dashboard for task creation, execution status, team assignments, approval decisions, memory CRUD and tool history. The existing repository tools remain read-only.
+
+### Retrieval evaluation
 
 The offline evaluation utility supports:
 
@@ -192,6 +204,7 @@ PostgreSQL is the persistent workspace store. The main entities include:
 | Chat conversation | Conversation associated with an authenticated user and saved repository |
 | Chat message | User/assistant message, timestamp, and stored citation metadata |\n| Agent task | User goal, repository snapshot, lifecycle status and step budget |\n| Agent plan | Versioned structured plan, provider/model metadata and completion criteria |\n| Agent step | Ordered step description, dependencies, suggested tool and step status |
 | Agent tool execution | Audited function call, validated arguments, structured result/error, duration and timestamps |\n| Agent memory | Owner-scoped repository notes, decisions, conventions, observations and source provenance |\n| Agent delegation | Coordinator-to-specialist assignments, attempt status and persisted result references |\n| Agent approval request | Exact proposed tool action, integrity hash, owner decision, expiry and execution audit reference |
+| Agent dashboard | React workspace for task lifecycle, specialists, approvals, memory and tool history |
 
 Migrations are managed with Alembic. The pgvector extension must be installed on the PostgreSQL server and enabled in the RepoLens database before applying migrations that create vector storage.
 
@@ -217,6 +230,7 @@ All application routes are versioned under `/api/v1`. The development API schema
 | Agent tool catalog | `GET /agents/tasks/{task_id}/tools` | List available read-only tool schemas |
 | Agent step execution | `POST /agents/tasks/{task_id}/steps/{step_key}/execute` | Select and execute one registered read-only tool for a planned step |
 | Agent tool history | `GET /agents/tasks/{task_id}/tool-executions` | Inspect owner-scoped tool execution records |\n| Repository memories | `GET/POST /agents/repositories/{repository_id}/memories` | Search/list or create repository memories |\n| Memory updates | `PATCH/DELETE /agents/memories/{memory_id}` | Edit, archive/restore or permanently delete an owned memory |\n| Agent team | `GET /agents/tasks/{task_id}/team` | Inspect the coordinator, specialists and per-step assignments |\n| Agent delegations | `GET /agents/tasks/{task_id}/delegations` | Inspect owner-scoped specialist assignment history |\n| Human approvals | `GET /agents/tasks/{task_id}/approvals` | Inspect proposed actions and owner decisions |\n| Approve / deny | `POST /agents/approvals/{approval_id}/approve` or `/deny` | Decide one exact proposed tool action |
+| Agent dashboard | `GET /agents/tasks`, task/team/approval/memory endpoints | Power the authenticated `/agents` workspace |
 
 Protected workspace operations require authentication and verify resource ownership. The OpenAPI schema in the running backend provides exact request and response fields.
 
@@ -403,3 +417,4 @@ Detailed implementation notes are maintained in `docs/`:
 - [Phase 8 — Deployment preparation and security](docs/PHASE_8.md)\n- [Phase 1 — Autonomous agent foundation](docs/PHASE_1_AGENT_FOUNDATION.md)
 - [Phase 2 — Agent tool calling system](docs/PHASE_2_AGENT_TOOL_CALLING.md)
 - [Phase 3 — Autonomous execution engine](docs/PHASE_3_AUTONOMOUS_EXECUTION.md)\n- [Phase 4 — Agent memory system](docs/PHASE_4_AGENT_MEMORY.md)\n- [Phase 5 — Multi-agent architecture](docs/PHASE_5_MULTI_AGENT_ARCHITECTURE.md)\n- [Phase 6 — Human approval and control](docs/PHASE_6_HUMAN_APPROVAL_AND_CONTROL.md)
+- [Phase 7 — Agent dashboard and UI](docs/PHASE_7_AGENT_DASHBOARD.md)
