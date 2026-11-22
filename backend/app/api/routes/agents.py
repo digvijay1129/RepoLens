@@ -97,6 +97,7 @@ async def create_task(
             repository=repository,
             goal=body.goal,
             max_steps=body.max_steps,
+            approval_mode=body.approval_mode,
         )
         return serialize_task(task)
     except AgentRepositoryNotReadyError as exc:
@@ -126,6 +127,7 @@ def get_tasks(
             "repository_id": task.repository_id,
             "goal": task.goal,
             "status": task.status,
+            "approval_mode": task.approval_mode,
             "max_steps": task.max_steps,
             "created_at": task.created_at.isoformat(),
             "updated_at": task.updated_at.isoformat(),
