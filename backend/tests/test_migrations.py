@@ -9,7 +9,7 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register models for metadata assertions
 
 
-def test_alembic_has_a_linear_fourteen_revision_history() -> None:
+def test_alembic_has_a_linear_thirteen_revision_history() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
