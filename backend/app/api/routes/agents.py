@@ -15,7 +15,17 @@ from app.agents.execution import (
     list_tool_executions,
 )
 from app.agents.planner import AgentPlanningError
-from app.agents.schemas import AgentGoalRequest, AgentStepExecutionRequest, AgentTaskStatus
+from app.agents.runner import (
+    AgentRunConflictError,
+    AgentRunNotFoundError,
+    run_agent_task,
+)
+from app.agents.schemas import (
+    AgentGoalRequest,
+    AgentRunRequest,
+    AgentStepExecutionRequest,
+    AgentTaskStatus,
+)
 from app.agents.tools import AgentToolError
 from app.agents.service import (
     AgentRepositoryNotReadyError,
@@ -209,3 +219,56 @@ async def execute_task_step(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (LLMProviderError, AgentToolError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+
+@router.post(
+    "/tasks/{task_id}/run",
+    response_model=AgentTaskDetail,
+    summary="Run a bounded autonomous Plan-Act-Observe-Decide task",
+)
+async def run_task(
+    task_id: uuid.UUID,
+    body: AgentRunRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return await run_agent_task(
+            db,
+            task_id=task_id,
+            user_id=current_user.id,
+            max_tool_calls=body.max_tool_calls,
+            max_retries_per_step=body.max_retries_per_step,
+            max_runtime_seconds=body.max_runtime_seconds,
+        )
+    except AgentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentRunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/tasks/{task_id}/resume",
+    response_model=AgentTaskDetail,
+    summary="Resume a paused or interrupted autonomous task",
+)
+async def resume_task(
+    task_id: uuid.UUID,
+    body: AgentRunRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return await run_agent_task(
+            db,
+            task_id=task_id,
+            user_id=current_user.id,
+            max_tool_calls=body.max_tool_calls,
+            max_retries_per_step=body.max_retries_per_step,
+            max_runtime_seconds=body.max_runtime_seconds,
+        )
+    except AgentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentRunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
