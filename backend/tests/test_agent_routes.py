@@ -407,7 +407,7 @@ def test_read_only_tool_catalog_and_execution_are_owner_scoped(
         headers=other["headers"],
     ).status_code == 404
 
-    async def choose_tool(task_arg, step_arg, registry, *, instruction=None, observations=None):
+    async def choose_tool(task_arg, step_arg, registry, *, instruction=None, observations=None, specialist=None):
         if step_arg.step_key == "find_auth":
             return LLMFunctionCall(
                 call_id="call-overview-1",
@@ -486,7 +486,7 @@ def test_failed_tool_call_is_logged_and_step_can_be_retried(
     )
     task_id = created.json()["id"]
 
-    async def fail_selection(task_arg, step_arg, registry, *, instruction=None, observations=None):
+    async def fail_selection(task_arg, step_arg, registry, *, instruction=None, observations=None, specialist=None):
         return LLMFunctionCall(
             call_id="call-unknown-tool",
             name="execute_shell",
@@ -540,7 +540,7 @@ def test_autonomous_run_executes_dependencies_and_builds_final_result(
     task_id = _create_agent_task_for_run(agent_client, account["headers"])
     selection_calls = []
 
-    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
         selection_calls.append({
             "step_key": step.step_key,
             "observations": observations or [],
@@ -592,7 +592,7 @@ def test_autonomous_run_pauses_at_budget_and_resumes_without_repeating_success(
     task_id = _create_agent_task_for_run(agent_client, account["headers"])
     selected_steps = []
 
-    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
         selected_steps.append(step.step_key)
         return LLMFunctionCall(
             call_id=f"resume-{len(selected_steps)}",
@@ -642,7 +642,7 @@ def test_autonomous_run_retries_failed_tool_within_budget(
     task_id = _create_agent_task_for_run(agent_client, account["headers"])
     calls = {"count": 0}
 
-    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
         calls["count"] += 1
         if calls["count"] == 1:
             return LLMFunctionCall(
@@ -931,7 +931,7 @@ def test_successful_tool_execution_automatically_captures_bounded_memory(
     )
     task_id = created.json()["id"]
 
-    async def choose_overview(task, step, registry, *, instruction=None, observations=None):
+    async def choose_overview(task, step, registry, *, instruction=None, observations=None, specialist=None):
         return LLMFunctionCall(
             call_id="memory-overview-call",
             name="repository_overview",
@@ -1006,7 +1006,7 @@ def test_autonomous_step_selection_receives_relevant_persisted_memory(
     task_id = created.json()["id"]
     observed_contexts = []
 
-    async def choose_tool(task, step, registry, *, instruction=None, observations=None):
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
         observed_contexts.append(observations or [])
         return LLMFunctionCall(
             call_id=f"memory-context-{len(observed_contexts)}",
