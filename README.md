@@ -101,7 +101,7 @@ Search results include ranked source snippets and repository/file/line context s
 
 The LLM is used to explain retrieved code; it is not used to fabricate repository contents. Generated answers can still be wrong, so verify important statements against their citations.
 
-### Agent task planning and read-only tool calling (Phases 1–2)\n\n- Create an authenticated task against a saved, indexed repository.\n- Use the existing OpenAI-compatible / OpenRouter chat provider to generate a structured plan.\n- Validate step count, unique step keys, dependency ordering and suggested tool names before persistence.\n- Persist the repository commit SHA, goal, plan summary, assumptions, completion criteria and ordered steps.\n- List, inspect and cancel queued or planned tasks within the current user's workspace.\n- Enforce ownership with authenticated API dependencies and database composite foreign keys.\n\nPhase 1 creates validated, persisted declarative plans. Phase 2 adds four allowlisted read-only repository tools selected through OpenAI-compatible function calling. A user can execute one planned step at a time; the multi-step autonomous execution loop remains reserved for Phase 3.\n\n### Retrieval evaluation
+### Autonomous agent task planning and execution (Phases 1–3)\n\n- Create an authenticated task against a saved, indexed repository.\n- Use the existing OpenAI-compatible / OpenRouter chat provider to generate a structured plan.\n- Validate step count, unique step keys, dependency ordering and suggested tool names before persistence.\n- Persist the repository commit SHA, goal, plan summary, assumptions, completion criteria and ordered steps.\n- List, inspect and cancel queued or planned tasks within the current user's workspace.\n- Enforce ownership with authenticated API dependencies and database composite foreign keys.\n\nPhase 1 creates validated, persisted plans. Phase 2 adds four allowlisted read-only repository tools selected through OpenAI-compatible function calling. Phase 3 adds a bounded Plan → Act → Observe → Decide loop that executes dependency-ready steps, observes prior results, retries within a fixed limit, and can pause, resume or be cancelled. The agent remains read-only.\n\n### Retrieval evaluation
 
 The offline evaluation utility supports:
 
@@ -211,7 +211,9 @@ All application routes are versioned under `/api/v1`. The development API schema
 | Search | `POST /repositories/saved/{repository_id}/search` | Keyword, semantic, or hybrid search |
 | Chat | `POST /repositories/saved/{repository_id}/chat` | Ask a repository-grounded question |
 | Conversations | `GET /repositories/saved/{repository_id}/conversations`, `GET /repositories/saved/{repository_id}/conversations/{conversation_id}` | Read saved conversation history |
-| Public contents | `GET /repositories/{owner}/{repository}/contents` | Browse public repository contents |\n| Agent tasks | `POST /agents/tasks`, `GET /agents/tasks` | Create a plan and list the current user's agent tasks |\n| Agent task detail | `GET /agents/tasks/{task_id}` | Inspect an owner-scoped task, plan and steps |\n| Agent cancellation | `POST /agents/tasks/{task_id}/cancel` | Cancel a queued or planned task |
+| Public contents | `GET /repositories/{owner}/{repository}/contents` | Browse public repository contents |\n| Agent tasks | `POST /agents/tasks`, `GET /agents/tasks` | Create a plan and list the current user's agent tasks |\n| Agent task detail | `GET /agents/tasks/{task_id}` | Inspect an owner-scoped task, plan and steps |\n| Agent cancellation | `POST /agents/tasks/{task_id}/cancel` | Cancel a queued, planned, paused or running task |
+| Autonomous run | `POST /agents/tasks/{task_id}/run` | Start a bounded multi-step agent run |
+| Resume run | `POST /agents/tasks/{task_id}/resume` | Resume a paused or stale interrupted task |
 | Agent tool catalog | `GET /agents/tasks/{task_id}/tools` | List available read-only tool schemas |
 | Agent step execution | `POST /agents/tasks/{task_id}/steps/{step_key}/execute` | Select and execute one registered read-only tool for a planned step |
 | Agent tool history | `GET /agents/tasks/{task_id}/tool-executions` | Inspect owner-scoped tool execution records |
@@ -379,7 +381,7 @@ Current scope limitations:
 - No repository code execution, Docker workflow, or TypeScript application is included.
 - Chat and embeddings depend on external provider configuration and availability.
 - Citation grounding improves traceability but does not guarantee that generated answers are always correct.
-- Agent Phase 2 supports manual, single-step read-only tool calls only. The autonomous multi-step execution loop, filesystem writes and shell execution are not enabled.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
+- Agent Phase 3 supports bounded, multi-step read-only repository analysis. Filesystem writes, shell execution and remote GitHub mutations remain disabled.\n- Production hosting is not configured by this repository's deployment-preparation work. A successful test run does not itself establish production readiness.
 
 See [SECURITY.md](SECURITY.md) for the project security policy.
 
@@ -400,3 +402,4 @@ Detailed implementation notes are maintained in `docs/`:
 - [Phase 7 — OpenRouter integration and evaluation](docs/PHASE_7.md)
 - [Phase 8 — Deployment preparation and security](docs/PHASE_8.md)\n- [Phase 1 — Autonomous agent foundation](docs/PHASE_1_AGENT_FOUNDATION.md)
 - [Phase 2 — Agent tool calling system](docs/PHASE_2_AGENT_TOOL_CALLING.md)
+- [Phase 3 — Autonomous execution engine](docs/PHASE_3_AUTONOMOUS_EXECUTION.md)
