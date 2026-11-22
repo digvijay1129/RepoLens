@@ -42,6 +42,12 @@ class AgentApprovalRequest(Base):
             ondelete="SET NULL",
         ),
         ForeignKeyConstraint(
+            ["proposed_execution_id"],
+            ["agent_tool_executions.id"],
+            name="fk_agent_approval_requests_proposed_execution",
+            ondelete="SET NULL",
+        ),
+        ForeignKeyConstraint(
             ["executed_execution_id"],
             ["agent_tool_executions.id"],
             name="fk_agent_approval_requests_executed_execution",
@@ -62,9 +68,9 @@ class AgentApprovalRequest(Base):
         CheckConstraint("length(tool_name) BETWEEN 1 AND 80", name="tool_name_length_valid"),
         CheckConstraint("length(action_hash) = 64", name="action_hash_length_valid"),
         CheckConstraint("length(policy_reason) BETWEEN 8 AND 500", name="policy_reason_length_valid"),
-        Index("ix_agent_approval_requests_task_status", "task_id", "status", "created_at"),
+        Index("ix_agent_approval_requests_task_status", "task_id", "status", "requested_at"),
         Index("ix_agent_approval_requests_user_status", "user_id", "status", "expires_at"),
-        Index("ix_agent_approval_requests_step_created", "step_id", "created_at"),
+        Index("ix_agent_approval_requests_step_created", "step_id", "requested_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
