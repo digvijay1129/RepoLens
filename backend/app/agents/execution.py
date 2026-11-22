@@ -7,17 +7,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents.memory import capture_tool_execution_memory, retrieve_relevant_memories
 from app.agents.schemas import AgentTaskStatus
+from app.agents.team import route_step_to_specialist
 from app.agents.tool_calling import select_tool_call
 from app.agents.tools import (
     AgentToolContext,
     AgentToolError,
     build_agent_tool_registry,
 )
+from app.models.agent_delegation import AgentDelegation
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
 from app.models.agent_tool_execution import AgentToolExecution
@@ -47,6 +49,24 @@ def _serialize_execution(execution: AgentToolExecution) -> dict[str, Any]:
         "created_at": execution.created_at.isoformat() if execution.created_at else None,
         "finished_at": execution.finished_at.isoformat() if execution.finished_at else None,
     }
+
+
+
+def _summarize_specialist_result(output: dict[str, Any]) -> str:
+    """Build a bounded summary without copying source-code excerpts."""
+    fields = [
+        ("repository", output.get("repository")),
+        ("file_path", output.get("file_path")),
+        ("result_count", output.get("result_count")),
+        ("indexed_file_count", output.get("indexed_file_count")),
+        ("indexed_chunk_count", output.get("indexed_chunk_count")),
+        ("returned_line_count", output.get("returned_line_count")),
+        ("commit_sha", output.get("commit_sha")),
+    ]
+    parts = [f"{key}: {value}" for key, value in fields if value is not None]
+    if not parts:
+        parts.append("Read-only repository evidence collected; inspect the linked tool output.")
+    return "; ".join(parts)[:1000]
 
 
 def list_agent_tools(
@@ -199,6 +219,35 @@ async def execute_agent_step(
             }
         )
 
+    specialist = route_step_to_specialist(step)
+    attempt_number = int(
+        db.scalar(
+            select(func.count(AgentDelegation.id)).where(
+                AgentDelegation.task_id == task.id,
+                AgentDelegation.step_id == step.id,
+                AgentDelegation.user_id == user_id,
+            )
+        ) or 0
+    ) + 1
+    delegation = AgentDelegation(
+        task_id=task.id,
+        step_id=step.id,
+        user_id=user_id,
+        repository_id=repository.id,
+        specialist_key=specialist.key,
+        specialist_name=specialist.display_name,
+        mission=specialist.mission,
+        status="running",
+        attempt_number=attempt_number,
+        assignment_context={
+            "task_goal": task.goal[:1200],
+            "step_key": step.step_key,
+            "step_title": step.title,
+            "expected_output": step.expected_output,
+            "indexed_commit_sha": task.indexed_commit_sha,
+        },
+        started_at=datetime.now(timezone.utc),
+    )
     started = time.perf_counter()
     execution = AgentToolExecution(
         task_id=task.id,
@@ -210,14 +259,17 @@ async def execute_agent_step(
         tool_input={
             "step_key": step.step_key,
             "instruction": instruction or "",
+            "specialist_key": specialist.key,
         },
     )
     step.status = "running"
     task.total_tool_calls += 1
     task.updated_at = datetime.now(timezone.utc)
+    db.add(delegation)
     db.add(execution)
     db.commit()
     db.refresh(execution)
+    db.refresh(delegation)
 
     try:
         registry = build_agent_tool_registry()
@@ -227,6 +279,7 @@ async def execute_agent_step(
             registry,
             instruction=instruction,
             observations=observations,
+            specialist=specialist,
         )
         definition = registry.get(selected.name)
         execution.provider_call_id = selected.call_id
@@ -235,6 +288,8 @@ async def execute_agent_step(
             "step_key": step.step_key,
             "arguments": selected.arguments,
             "instruction": instruction or "",
+            "specialist_key": specialist.key,
+            "specialist_name": specialist.display_name,
         }
         db.flush()
         # Commit the provider choice and arguments before dispatch so failures
@@ -253,6 +308,10 @@ async def execute_agent_step(
         execution.error_message = None
         execution.duration_ms = duration_ms
         execution.finished_at = datetime.now(timezone.utc)
+        delegation.source_execution_id = execution.id
+        delegation.status = "succeeded"
+        delegation.result_summary = _summarize_specialist_result(output)
+        delegation.finished_at = datetime.now(timezone.utc)
         step.status = "succeeded"
         step.updated_at = datetime.now(timezone.utc)
         db.commit()
@@ -272,6 +331,7 @@ async def execute_agent_step(
         db.rollback()
         execution = db.get(AgentToolExecution, execution.id)
         step = db.get(AgentStep, step.id)
+        delegation = db.get(AgentDelegation, delegation.id)
         if execution is not None:
             execution.status = "failed"
             execution.error_message = str(exc)[:1000]
@@ -280,6 +340,10 @@ async def execute_agent_step(
         if step is not None:
             step.status = "failed"
             step.updated_at = datetime.now(timezone.utc)
+        if delegation is not None:
+            delegation.status = "failed"
+            delegation.error_message = str(exc)[:1000]
+            delegation.finished_at = datetime.now(timezone.utc)
         db.commit()
         raise
     except Exception as exc:
@@ -294,5 +358,9 @@ async def execute_agent_step(
         if step is not None:
             step.status = "failed"
             step.updated_at = datetime.now(timezone.utc)
+        if delegation is not None:
+            delegation.status = "failed"
+            delegation.error_message = "Specialist execution failed unexpectedly."
+            delegation.finished_at = datetime.now(timezone.utc)
         db.commit()
         raise AgentToolError("Tool execution failed unexpectedly.") from exc
