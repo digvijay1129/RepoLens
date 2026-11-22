@@ -379,23 +379,41 @@ def capture_tool_execution_memory(
     execution_id: uuid.UUID,
 ) -> dict[str, Any] | None:
     """Save a compact metadata/reference observation; never persist source excerpts."""
-    row = db.execute(
-        select(AgentTask, AgentToolExecution, Repository, AgentStep)
-        .join(AgentToolExecution, AgentToolExecution.task_id == AgentTask.id)
-        .join(Repository, Repository.id == AgentTask.repository_id)
-        .join(AgentStep, AgentStep.id == AgentToolExecution.step_id)
-        .where(
+    task = db.scalar(
+        select(AgentTask).where(
             AgentTask.id == task_id,
             AgentTask.user_id == user_id,
+        )
+    )
+    if task is None:
+        return None
+    execution = db.scalar(
+        select(AgentToolExecution).where(
             AgentToolExecution.id == execution_id,
-            AgentToolExecution.status == "succeeded",
+            AgentToolExecution.task_id == task_id,
             AgentToolExecution.user_id == user_id,
+            AgentToolExecution.repository_id == task.repository_id,
+            AgentToolExecution.status == "succeeded",
+        )
+    )
+    if execution is None:
+        return None
+    repository = db.scalar(
+        select(Repository).where(
+            Repository.id == task.repository_id,
             Repository.user_id == user_id,
         )
-    ).first()
-    if row is None:
+    )
+    step = db.scalar(
+        select(AgentStep).where(
+            AgentStep.id == execution.step_id,
+            AgentStep.task_id == task_id,
+            AgentStep.user_id == user_id,
+            AgentStep.repository_id == task.repository_id,
+        )
+    )
+    if repository is None or step is None:
         return None
-    task, execution, repository, step = row
     output = execution.tool_output or {}
     refs: list[dict[str, Any]] = []
     if execution.tool_name == "repository_overview":
