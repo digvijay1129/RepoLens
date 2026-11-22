@@ -30,7 +30,7 @@ Rules:
 - Do not propose running repository code, shell commands, writing files, pushing commits,
   opening pull requests or changing remote state.
 - Use only these suggested_tool labels when relevant:
-  repository_overview, search_code, inspect_source, explain_architecture, draft_report.
+  repository_overview, list_indexed_files, search_code, inspect_source.
 - Keep each step focused and make dependencies refer only to earlier steps.
 - Include concrete completion criteria and disclose assumptions.
 """
@@ -52,8 +52,7 @@ def validate_plan(proposal: AgentPlanProposal, *, max_steps: int) -> AgentPlanPr
         "repository_overview",
         "search_code",
         "inspect_source",
-        "explain_architecture",
-        "draft_report",
+        "list_indexed_files",
     }
     for step in proposal.steps:
         if step.suggested_tool and step.suggested_tool not in allowed_tools:
