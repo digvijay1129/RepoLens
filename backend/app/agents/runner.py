@@ -291,8 +291,6 @@ async def run_agent_task(
 
         if time.monotonic() - run_started >= max_runtime_seconds:
             return _pause_task(db, task, "Run-time budget reached. Resume the task to continue.")
-        if task.total_tool_calls >= task.max_tool_calls:
-            return _pause_task(db, task, "Tool-call budget reached. Increase the budget and resume to continue.")
 
         status_by_key = {step.step_key: step.status for step in steps}
         ready_step = next(
@@ -314,6 +312,21 @@ async def run_agent_task(
                 db,
                 task,
                 "No dependency-ready step remains. Blocked or invalid steps: " + ", ".join(blocked),
+            )
+
+        approved_action_id = db.scalar(
+            select(AgentApprovalRequest.id).where(
+                AgentApprovalRequest.task_id == task.id,
+                AgentApprovalRequest.step_id == ready_step.id,
+                AgentApprovalRequest.user_id == user_id,
+                AgentApprovalRequest.status == "approved",
+            ).limit(1)
+        )
+        if task.total_tool_calls >= task.max_tool_calls and approved_action_id is None:
+            return _pause_task(
+                db,
+                task,
+                "Tool-call budget reached. Increase the budget and resume to continue.",
             )
 
         failed_attempts = _step_failed_attempts(db, task_id=task.id, step_id=ready_step.id)
