@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.agent_memory import AgentMemory
+from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
 from app.models.agent_tool_execution import AgentToolExecution
 from app.models.repository import Repository
