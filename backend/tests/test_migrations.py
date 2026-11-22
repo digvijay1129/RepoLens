@@ -9,13 +9,13 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register models for metadata assertions
 
 
-def test_alembic_has_a_linear_seven_revision_history() -> None:
+def test_alembic_has_a_linear_eight_revision_history() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
     revisions = {revision.revision: revision for revision in script.walk_revisions()}
 
-    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007"}
+    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007", "20261122_0008"}
     assert revisions["20261025_0001"].down_revision is None
     assert revisions["20261025_0002"].down_revision == "20261025_0001"
     assert revisions["20261025_0003"].down_revision == "20261025_0002"
@@ -23,11 +23,12 @@ def test_alembic_has_a_linear_seven_revision_history() -> None:
     assert revisions["20261025_0005"].down_revision == "20261025_0004"
     assert revisions["20261025_0006"].down_revision == "20261025_0005"
     assert revisions["20261025_0007"].down_revision == "20261025_0006"
-    assert script.get_current_head() == "20261025_0007"
+    assert revisions["20261122_0008"].down_revision == "20261025_0007"
+    assert script.get_current_head() == "20261122_0008"
 
 
 def test_model_metadata_has_expected_tables() -> None:
-    assert set(Base.metadata.tables) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings", "chat_conversations", "chat_messages"}
+    assert set(Base.metadata.tables) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings", "chat_conversations", "chat_messages", "agent_tasks", "agent_plans", "agent_steps"}
 
 
 def test_models_include_phase_3b_persistence_fields() -> None:
@@ -50,4 +51,17 @@ def test_models_include_phase_3b_persistence_fields() -> None:
     )
     assert {"provider", "model", "dimensions", "content_hash", "vector"} <= set(
         Base.metadata.tables["repository_chunk_embeddings"].columns.keys()
+    )
+
+
+
+def test_agent_models_include_owner_scoped_persistence_fields() -> None:
+    assert {"indexed_commit_sha", "goal", "status", "max_steps", "latest_error"} <= set(
+        Base.metadata.tables["agent_tasks"].columns.keys()
+    )
+    assert {"version", "summary", "completion_criteria", "assumptions", "planner_provider", "planner_model"} <= set(
+        Base.metadata.tables["agent_plans"].columns.keys()
+    )
+    assert {"position", "step_key", "title", "description", "rationale", "expected_output", "suggested_tool", "depends_on", "status"} <= set(
+        Base.metadata.tables["agent_steps"].columns.keys()
     )
