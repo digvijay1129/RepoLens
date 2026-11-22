@@ -126,6 +126,10 @@ def route_step_to_specialist(step: AgentStep) -> AgentSpecialist:
             "code_analysis",
             ("analy", "review", "inspect code", "security", "vulnerability", "quality", "dependency", "control flow"),
         ),
+        (
+            "research",
+            ("find", "discover", "locate", "explore", "inventory", "repository map", "file locations"),
+        ),
     )
     scores: dict[str, int] = {}
     for key, keywords in rules:
