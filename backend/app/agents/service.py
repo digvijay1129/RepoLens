@@ -52,6 +52,7 @@ def serialize_task(task: AgentTask, *, include_plan: bool = True) -> dict[str, A
         "repository_id": task.repository_id,
         "goal": task.goal,
         "status": task.status,
+        "approval_mode": task.approval_mode,
         "max_steps": task.max_steps,
         "created_at": _iso(task.created_at),
         "updated_at": _iso(task.updated_at),
@@ -90,6 +91,7 @@ async def create_agent_task(
     repository: Repository,
     goal: str,
     max_steps: int,
+    approval_mode: str = "auto",
 ) -> AgentTask:
     """Persist a queued task and a validated plan; no tool execution occurs."""
     if repository.user_id != user_id:
@@ -102,6 +104,7 @@ async def create_agent_task(
         repository_id=repository.id,
         indexed_commit_sha=repository.indexed_commit_sha,
         goal=goal.strip(),
+        approval_mode=approval_mode,
         max_steps=max_steps,
         status=AgentTaskStatus.PLANNING.value,
     )
@@ -181,6 +184,8 @@ def list_agent_tasks(
 
 def cancel_agent_task(db: Session, *, task_id: uuid.UUID, user_id: uuid.UUID) -> AgentTask:
     task = get_agent_task(db, task_id=task_id, user_id=user_id)
+    from app.agents.approvals import cancel_pending_approvals
+    cancel_pending_approvals(db, task_id=task_id, user_id=user_id)
     state = AgentExecutionState(
         task_id=task.id,
         user_id=task.user_id,
