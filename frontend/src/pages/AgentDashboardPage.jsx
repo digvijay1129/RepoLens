@@ -145,9 +145,13 @@ export default function AgentDashboardPage({ repositories = [], selectedReposito
   const progress = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
   useEffect(() => {
-    const next = preferredRepository?.id || repositories[0]?.id || "";
+    const next = (
+      preferredRepository?.indexing_status === "indexed" && preferredRepository?.indexed_commit_sha
+        ? preferredRepository.id
+        : indexedRepositories[0]?.id || repositories[0]?.id || ""
+    );
     setRepositoryId(next);
-  }, [preferredRepository?.id, repositories]);
+  }, [preferredRepository?.id, indexedRepositories.map((item) => item.id).join("|"), repositories.map((item) => item.id).join("|")]);
 
   const loadTasks = useCallback(async (nextRepositoryId = repositoryId) => {
     if (!nextRepositoryId) {
