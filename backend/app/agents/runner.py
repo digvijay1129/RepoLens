@@ -117,6 +117,12 @@ def _complete_task(db: Session, task: AgentTask, steps: list[AgentStep]) -> dict
             }
 
     team_view = get_task_team(db, task_id=task.id, user_id=task.user_id)
+    approval_records = db.scalars(
+        select(AgentApprovalRequest).where(
+            AgentApprovalRequest.task_id == task.id,
+            AgentApprovalRequest.user_id == task.user_id,
+        )
+    ).all()
     task.final_result = {
         "goal": task.goal,
         "summary": plan.summary if plan else "The planned repository task completed.",
@@ -126,6 +132,13 @@ def _complete_task(db: Session, task: AgentTask, steps: list[AgentStep]) -> dict
             for step in sorted(steps, key=lambda item: item.position)
             if step.step_key in latest_by_step
         ],
+        "human_approval": {
+            "mode": task.approval_mode,
+            "requests": len(approval_records),
+            "executed": sum(item.status == "executed" for item in approval_records),
+            "denied": sum(item.status == "denied" for item in approval_records),
+            "expired": sum(item.status == "expired" for item in approval_records),
+        },
         "team": {
             "coordinator": team_view["coordinator"]["name"],
             "specialists": team_view["specialists"],
