@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 def test_agent_tables_are_registered():
-    assert {"agent_tasks", "agent_plans", "agent_steps"} <= set(Base.metadata.tables)
+    assert {"agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions"} <= set(Base.metadata.tables)
 
 
 def test_agent_metadata_creates_on_sqlite():
@@ -32,3 +32,10 @@ def test_agent_composite_owner_constraints_are_registered():
     assert "uq_agent_tasks_id_user_repository" in task_constraints
     assert "uq_agent_plans_id_task_user" in plan_constraints
     assert "fk_agent_steps_plan_owner" in step_constraints
+
+
+def test_agent_tool_execution_table_is_registered():
+    assert {
+        "task_id", "step_id", "user_id", "repository_id",
+        "tool_name", "status", "tool_input", "tool_output",
+    } <= set(Base.metadata.tables["agent_tool_executions"].columns.keys())
