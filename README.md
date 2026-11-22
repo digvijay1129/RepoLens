@@ -134,6 +134,7 @@ The tree below shows the main source areas and their responsibilities.
 RepoLens/
 ├── backend/
 │   ├── app/
+│   │   ├── agents/                 # Task planner, orchestration and lifecycle state
 │   │   ├── api/
 │   │   │   ├── routes/             # Versioned REST endpoints
 │   │   │   ├── schemas/            # Request and response schemas
@@ -142,7 +143,7 @@ RepoLens/
 │   │   ├── core/                   # Settings and security configuration
 │   │   ├── db/                     # SQLAlchemy session and schema checks
 │   │   ├── evaluation/             # Retrieval and citation evaluation
-│   │   ├── models/                 # User, repository, chunks, jobs and chat models
+│   │   ├── models/                 # User, repository, chunks, jobs, chat and agent models
 │   │   ├── services/               # GitHub, indexing, embeddings, retrieval and chat
 │   │   └── main.py                 # FastAPI application entry point
 │   ├── evaluation/
