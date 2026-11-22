@@ -112,7 +112,7 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     },
     "agent_tasks": {
         "id", "user_id", "repository_id", "indexed_commit_sha", "goal",
-        "status", "max_steps", "max_tool_calls", "max_retries_per_step",
+        "status", "approval_mode", "max_steps", "max_tool_calls", "max_retries_per_step",
         "total_tool_calls", "total_retries", "final_result", "execution_started_at",
         "execution_finished_at", "latest_error", "created_at", "updated_at",
     },
@@ -141,6 +141,12 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "specialist_key", "specialist_name", "mission", "status", "attempt_number",
         "assignment_context", "result_summary", "error_message", "created_at",
         "started_at", "finished_at",
+    },
+    "agent_approval_requests": {
+        "id", "task_id", "step_id", "user_id", "repository_id", "delegation_id",
+        "executed_execution_id", "approval_mode", "tool_name", "tool_arguments",
+        "provider_call_id", "action_hash", "specialist_key", "policy_reason", "status",
+        "requested_at", "expires_at", "decided_at", "decided_by_user_id", "decision_comment",
     },
 }
 
@@ -241,6 +247,7 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
         "unique": {"uq_agent_tasks_id_user_repository"},
         "check": {
             "ck_agent_tasks_status_allowed",
+            "ck_agent_tasks_approval_mode_allowed",
             "ck_agent_tasks_max_steps_valid",
             "ck_agent_tasks_max_tool_calls_valid",
             "ck_agent_tasks_max_retries_per_step_valid",
@@ -336,6 +343,30 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ix_agent_delegations_task_created",
             "ix_agent_delegations_user_task",
             "ix_agent_delegations_step_attempt",
+        },
+    },
+    "agent_approval_requests": {
+        "primary": {"pk_agent_approval_requests"},
+        "unique": set(),
+        "check": {
+            "ck_agent_approval_requests_status_allowed",
+            "ck_agent_approval_requests_approval_mode_allowed",
+            "ck_agent_approval_requests_specialist_key_allowed",
+            "ck_agent_approval_requests_tool_name_length_valid",
+            "ck_agent_approval_requests_action_hash_length_valid",
+            "ck_agent_approval_requests_policy_reason_length_valid",
+        },
+        "foreign": {
+            "fk_agent_approval_requests_task_owner",
+            "fk_agent_approval_requests_step_owner",
+            "fk_agent_approval_requests_delegation",
+            "fk_agent_approval_requests_executed_execution",
+            "fk_agent_approval_requests_decided_by_user_id_users",
+        },
+        "indexes": {
+            "ix_agent_approval_requests_task_status",
+            "ix_agent_approval_requests_user_status",
+            "ix_agent_approval_requests_step_created",
         },
     },
 }
