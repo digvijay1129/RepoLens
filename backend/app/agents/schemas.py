@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -164,3 +165,74 @@ class AgentToolExecutionResponse(BaseModel):
     duration_ms: int | None = None
     created_at: str
     finished_at: str | None = None
+
+
+
+class AgentMemoryCreateRequest(BaseModel):
+    """A user-curated memory scoped to one saved repository."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    memory_type: Literal["architecture", "convention", "decision", "troubleshooting", "note"]
+    title: str = Field(min_length=3, max_length=160)
+    content: str = Field(min_length=8, max_length=6000)
+    tags: list[str] = Field(default_factory=list, max_length=12)
+    importance: int = Field(default=3, ge=1, le=5)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    expires_at: datetime | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def validate_memory_tags(cls, value: list[str]) -> list[str]:
+        tags = [tag.strip().casefold() for tag in value if tag.strip()]
+        if any(len(tag) > 48 for tag in tags):
+            raise ValueError("Memory tags must contain at most 48 characters.")
+        return list(dict.fromkeys(tags))
+
+
+class AgentMemoryUpdateRequest(BaseModel):
+    """Editable user-facing fields; provenance and ownership remain immutable."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    memory_type: Literal["architecture", "convention", "decision", "troubleshooting", "note"] | None = None
+    title: str | None = Field(default=None, min_length=3, max_length=160)
+    content: str | None = Field(default=None, min_length=8, max_length=6000)
+    tags: list[str] | None = Field(default=None, max_length=12)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    expires_at: datetime | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def validate_update_memory_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        tags = [tag.strip().casefold() for tag in value if tag.strip()]
+        if any(len(tag) > 48 for tag in tags):
+            raise ValueError("Memory tags must contain at most 48 characters.")
+        return list(dict.fromkeys(tags))
+
+
+class AgentMemoryResponse(BaseModel):
+    id: UUID
+    repository_id: UUID
+    task_id: UUID | None = None
+    source_execution_id: UUID | None = None
+    memory_type: str
+    origin: str
+    title: str
+    content: str
+    tags: list[str]
+    source_refs: list[dict]
+    source_commit_sha: str | None = None
+    confidence: float
+    importance: int
+    is_active: bool
+    access_count: int
+    last_accessed_at: str | None = None
+    expires_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    relevance_score: float | None = None
+    snapshot_matches: bool | None = None
