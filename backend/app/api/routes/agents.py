@@ -4,10 +4,20 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.approvals import (
+    AgentApprovalConflictError,
+    AgentApprovalNotFoundError,
+    approve_action,
+    deny_action,
+    list_task_approvals,
+    serialize_approval,
+)
 from app.agents.execution import (
+    AgentApprovalRequired,
     AgentExecutionConflictError,
     AgentStepNotFoundError,
     execute_agent_step,
@@ -29,6 +39,8 @@ from app.agents.runner import (
     run_agent_task,
 )
 from app.agents.schemas import (
+    AgentApprovalDecisionRequest,
+    AgentApprovalResponse,
     AgentGoalRequest,
     AgentMemoryCreateRequest,
     AgentMemoryResponse,
@@ -229,6 +241,27 @@ async def execute_task_step(
             user_id=current_user.id,
             instruction=body.instruction,
         )
+    except AgentApprovalRequired as exc:
+        from app.models.agent_approval_request import AgentApprovalRequest
+
+        approval = db.scalar(
+            select(AgentApprovalRequest).where(
+                AgentApprovalRequest.id == exc.approval_id,
+                AgentApprovalRequest.user_id == current_user.id,
+            )
+        )
+        if approval is None:
+            raise HTTPException(status_code=404, detail="Approval request was not found.")
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "approval_required": True,
+                "approval": {
+                    key: str(value) if isinstance(value, uuid.UUID) else value
+                    for key, value in serialize_approval(approval).items()
+                },
+            },
+        )
     except AgentStepNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except AgentExecutionConflictError as exc:
@@ -422,3 +455,68 @@ def get_agent_delegations(
         return list_task_delegations(db, task_id=task_id, user_id=current_user.id)
     except AgentTeamNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+
+@router.get(
+    "/tasks/{task_id}/approvals",
+    response_model=list[AgentApprovalResponse],
+    summary="List human approval requests and decisions for an owned task",
+)
+def get_task_approvals(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> list[dict]:
+    try:
+        return list_task_approvals(db, task_id=task_id, user_id=current_user.id)
+    except AgentApprovalNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/approvals/{approval_id}/approve",
+    response_model=AgentApprovalResponse,
+    summary="Approve one exact proposed tool action",
+)
+def approve_agent_action(
+    approval_id: uuid.UUID,
+    body: AgentApprovalDecisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return approve_action(
+            db,
+            approval_id=approval_id,
+            user_id=current_user.id,
+            comment=body.comment,
+        )
+    except AgentApprovalNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentApprovalConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/approvals/{approval_id}/deny",
+    response_model=AgentApprovalResponse,
+    summary="Deny one proposed tool action and stop its task",
+)
+def deny_agent_action(
+    approval_id: uuid.UUID,
+    body: AgentApprovalDecisionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return deny_action(
+            db,
+            approval_id=approval_id,
+            user_id=current_user.id,
+            comment=body.comment,
+        )
+    except AgentApprovalNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentApprovalConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
