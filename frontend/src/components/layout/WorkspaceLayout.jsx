@@ -7,6 +7,7 @@ const pageTitles = {
   repositories: "Repositories",
   explorer: "Code explorer",
   conversations: "AI chat",
+  agents: "Agent dashboard",
   settings: "Settings",
 };
 
