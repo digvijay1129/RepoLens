@@ -198,6 +198,10 @@ async def execute_agent_step(
             "instruction": instruction or "",
         }
         db.flush()
+        # Commit the provider choice and arguments before dispatch so failures
+        # still leave an auditable record of what the model requested.
+        db.commit()
+        db.refresh(execution)
 
         output = await registry.execute(
             selected.name,
