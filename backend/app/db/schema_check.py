@@ -149,12 +149,6 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "policy_reason", "status", "requested_at", "expires_at", "decided_at",
         "decided_by_user_id", "decision_comment",
     },
-    "agent_approval_requests": {
-        "id", "task_id", "step_id", "user_id", "repository_id", "delegation_id",
-        "executed_execution_id", "approval_mode", "tool_name", "tool_arguments",
-        "provider_call_id", "action_hash", "specialist_key", "policy_reason", "status",
-        "requested_at", "expires_at", "decided_at", "decided_by_user_id", "decision_comment",
-    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
