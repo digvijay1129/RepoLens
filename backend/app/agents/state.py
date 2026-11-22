@@ -15,9 +15,11 @@ _ALLOWED_TRANSITIONS: dict[AgentTaskStatus, set[AgentTaskStatus]] = {
     AgentTaskStatus.PLANNING: {
         AgentTaskStatus.PLANNED,
         AgentTaskStatus.FAILED,
+        AgentTaskStatus.PAUSED,
         AgentTaskStatus.CANCELLED,
     },
     AgentTaskStatus.PLANNED: {AgentTaskStatus.RUNNING, AgentTaskStatus.CANCELLED},
+    AgentTaskStatus.PAUSED: {AgentTaskStatus.RUNNING, AgentTaskStatus.CANCELLED},
     AgentTaskStatus.RUNNING: {
         AgentTaskStatus.AWAITING_APPROVAL,
         AgentTaskStatus.COMPLETED,
@@ -39,8 +41,8 @@ _ALLOWED_TRANSITIONS: dict[AgentTaskStatus, set[AgentTaskStatus]] = {
 class AgentExecutionState:
     """In-memory representation of durable task state.
 
-    Phase 1 persists the task/plan/step records. Later phases will hydrate this
-    object from PostgreSQL to resume bounded execution after worker restarts.
+    Durable task and step progress is persisted by the execution service. Paused
+    tasks can resume from their last successful step without repeating its tool call.
     """
 
     task_id: UUID
