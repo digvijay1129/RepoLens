@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.agents.orchestrator import AgentOrchestrator, AgentPlanningResult
 from app.agents.schemas import AgentPlanProposal
+from app.services.llm_tools import LLMFunctionCall
 from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import get_db_session
@@ -359,3 +360,153 @@ def test_planner_configuration_failure_returns_service_unavailable(
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "Provider is disabled for this test."
+
+
+
+def test_read_only_tool_catalog_and_execution_are_owner_scoped(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-tools-owner@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=account["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Inspect repository metadata and review authentication.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    task = created.json()
+
+    catalog = agent_client.get(
+        f"/api/v1/agents/tasks/{task['id']}/tools",
+        headers=account["headers"],
+    )
+    assert catalog.status_code == 200
+    assert {tool["name"] for tool in catalog.json()} == {
+        "repository_overview",
+        "list_indexed_files",
+        "search_code",
+        "inspect_source",
+    }
+    assert all(tool["read_only"] is True for tool in catalog.json())
+
+    other = create_account(agent_client, "agent-tools-other@example.com")
+    assert agent_client.get(
+        f"/api/v1/agents/tasks/{task['id']}/tools",
+        headers=other["headers"],
+    ).status_code == 404
+    assert agent_client.get(
+        f"/api/v1/agents/tasks/{task['id']}/tool-executions",
+        headers=other["headers"],
+    ).status_code == 404
+
+    async def choose_tool(task_arg, step_arg, registry, *, instruction=None):
+        if step_arg.step_key == "find_auth":
+            return LLMFunctionCall(
+                call_id="call-overview-1",
+                name="repository_overview",
+                arguments={},
+            )
+        return LLMFunctionCall(
+            call_id="call-files-2",
+            name="list_indexed_files",
+            arguments={"limit": 5},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+
+    blocked = agent_client.post(
+        f"/api/v1/agents/tasks/{task['id']}/steps/review_tokens/execute",
+        headers=account["headers"],
+        json={},
+    )
+    assert blocked.status_code == 409
+    assert "prerequisite" in blocked.json()["detail"]
+
+    first = agent_client.post(
+        f"/api/v1/agents/tasks/{task['id']}/steps/find_auth/execute",
+        headers=account["headers"],
+        json={"instruction": "Start with repository metadata."},
+    )
+    assert first.status_code == 200, first.text
+    first_result = first.json()
+    assert first_result["tool_name"] == "repository_overview"
+    assert first_result["status"] == "succeeded"
+    assert first_result["tool_output"]["repository"] == "digvijay1129/repolens"
+    assert first_result["tool_output"]["source_execution"].startswith("disabled")
+
+    repeated = agent_client.post(
+        f"/api/v1/agents/tasks/{task['id']}/steps/find_auth/execute",
+        headers=account["headers"],
+        json={},
+    )
+    assert repeated.status_code == 409
+
+    second = agent_client.post(
+        f"/api/v1/agents/tasks/{task['id']}/steps/review_tokens/execute",
+        headers=account["headers"],
+        json={},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["tool_name"] == "list_indexed_files"
+
+    history = agent_client.get(
+        f"/api/v1/agents/tasks/{task['id']}/tool-executions",
+        headers=account["headers"],
+    )
+    assert history.status_code == 200
+    assert len(history.json()) == 2
+    assert {item["status"] for item in history.json()} == {"succeeded"}
+
+
+def test_failed_tool_call_is_logged_and_step_can_be_retried(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    account = create_account(agent_client, "agent-tool-failure@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=account["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Inspect repository metadata and review authentication.",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def fail_selection(task_arg, step_arg, registry, *, instruction=None):
+        return LLMFunctionCall(
+            call_id="call-unknown-tool",
+            name="execute_shell",
+            arguments={"command": "whoami"},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", fail_selection)
+    failed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=account["headers"],
+        json={},
+    )
+    assert failed.status_code == 502
+    assert "not available" in failed.json()["detail"]
+
+    history = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/tool-executions",
+        headers=account["headers"],
+    )
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    assert history.json()[0]["status"] == "failed"
+    assert history.json()[0]["error_message"]
