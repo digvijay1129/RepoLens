@@ -178,6 +178,12 @@ def test_agent_api_routes_are_registered_in_openapi():
     assert "get" in paths["/api/v1/agents/tasks/{task_id}/team"]
     assert "/api/v1/agents/tasks/{task_id}/delegations" in paths
     assert "get" in paths["/api/v1/agents/tasks/{task_id}/delegations"]
+    assert "/api/v1/agents/tasks/{task_id}/approvals" in paths
+    assert "get" in paths["/api/v1/agents/tasks/{task_id}/approvals"]
+    assert "/api/v1/agents/approvals/{approval_id}/approve" in paths
+    assert "post" in paths["/api/v1/agents/approvals/{approval_id}/approve"]
+    assert "/api/v1/agents/approvals/{approval_id}/deny" in paths
+    assert "post" in paths["/api/v1/agents/approvals/{approval_id}/deny"]
 
 
 
