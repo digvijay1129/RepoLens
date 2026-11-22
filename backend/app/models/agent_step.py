@@ -43,6 +43,7 @@ class AgentStep(Base):
             name="status_allowed",
         ),
         CheckConstraint("length(title) BETWEEN 3 AND 160", name="title_length_valid"),
+        CheckConstraint("length(step_key) BETWEEN 2 AND 50", name="step_key_length_valid"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
