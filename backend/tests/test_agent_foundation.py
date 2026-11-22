@@ -156,3 +156,12 @@ async def test_planner_rejects_non_json_provider_output():
             settings_factory=lambda: settings,
             completion_func=fake_completion,
         )
+
+
+def test_agent_api_routes_are_registered():
+    from app.api.router import api_router
+
+    paths = {route.path for route in api_router.routes}
+    assert "/agents/tasks" in paths
+    assert "/agents/tasks/{task_id}" in paths
+    assert "/agents/tasks/{task_id}/cancel" in paths
