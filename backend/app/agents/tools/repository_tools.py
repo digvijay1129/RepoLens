@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -116,25 +115,24 @@ async def list_indexed_files(
     arguments: ListIndexedFilesArguments,
 ) -> dict:
     commit_sha = _require_indexed_context(context)
-    statement = (
-        select(
-            RepositoryChunk.file_path,
-            RepositoryChunk.language,
-            func.count(RepositoryChunk.id).label("chunk_count"),
-            func.min(RepositoryChunk.start_line).label("start_line"),
-            func.max(RepositoryChunk.end_line).label("end_line"),
-        )
-        .where(
-            RepositoryChunk.repository_id == context.repository.id,
-            RepositoryChunk.user_id == context.user_id,
-            RepositoryChunk.commit_sha == commit_sha,
-        )
-        .group_by(RepositoryChunk.file_path, RepositoryChunk.language)
-        .order_by(RepositoryChunk.file_path.asc())
-        .limit(arguments.limit)
+    statement = select(
+        RepositoryChunk.file_path,
+        RepositoryChunk.language,
+        func.count(RepositoryChunk.id).label("chunk_count"),
+        func.min(RepositoryChunk.start_line).label("start_line"),
+        func.max(RepositoryChunk.end_line).label("end_line"),
+    ).where(
+        RepositoryChunk.repository_id == context.repository.id,
+        RepositoryChunk.user_id == context.user_id,
+        RepositoryChunk.commit_sha == commit_sha,
     )
     if arguments.prefix:
         statement = statement.where(RepositoryChunk.file_path.startswith(arguments.prefix))
+    statement = (
+        statement.group_by(RepositoryChunk.file_path, RepositoryChunk.language)
+        .order_by(RepositoryChunk.file_path.asc())
+        .limit(arguments.limit)
+    )
     rows = context.db.execute(statement).all()
     return {
         "repository": context.repository.full_name,
