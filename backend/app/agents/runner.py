@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents.execution import (
+    AgentApprovalRequired,
     AgentExecutionConflictError,
     AgentStepNotFoundError,
     execute_agent_step,
@@ -18,6 +19,7 @@ from app.agents.execution import (
 from app.agents.schemas import AgentTaskStatus
 from app.agents.service import serialize_task
 from app.agents.team_service import get_task_team
+from app.models.agent_approval_request import AgentApprovalRequest
 from app.models.agent_step import AgentStep
 from app.models.agent_task import AgentTask
 from app.models.agent_tool_execution import AgentToolExecution
@@ -181,8 +183,29 @@ async def run_agent_task(
         AgentTaskStatus.PLANNED.value,
         AgentTaskStatus.PAUSED.value,
         AgentTaskStatus.RUNNING.value,
+        AgentTaskStatus.AWAITING_APPROVAL.value,
     }:
         raise AgentRunConflictError("Only planned, paused, or interrupted tasks can be started or resumed.")
+
+    if task.status == AgentTaskStatus.AWAITING_APPROVAL.value:
+        pending_approval = db.scalar(
+            select(AgentApprovalRequest.id).where(
+                AgentApprovalRequest.task_id == task.id,
+                AgentApprovalRequest.user_id == user_id,
+                AgentApprovalRequest.status == "pending",
+            ).limit(1)
+        )
+        approved_approval = db.scalar(
+            select(AgentApprovalRequest.id).where(
+                AgentApprovalRequest.task_id == task.id,
+                AgentApprovalRequest.user_id == user_id,
+                AgentApprovalRequest.status == "approved",
+            ).limit(1)
+        )
+        if pending_approval is not None:
+            raise AgentRunConflictError("A proposed action is still awaiting owner approval.")
+        if approved_approval is None:
+            raise AgentRunConflictError("No approved action is available to resume this task.")
 
     if task.status == AgentTaskStatus.RUNNING.value:
         last_update = task.updated_at
@@ -314,6 +337,9 @@ async def run_agent_task(
                 user_id=user_id,
                 observations=observations,
             )
+        except AgentApprovalRequired:
+            db.refresh(task)
+            return serialize_task(task)
         except LLMConfigurationError as exc:
             db.refresh(task)
             return _fail_task(db, task, str(exc))
