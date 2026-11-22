@@ -136,6 +136,12 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "source_commit_sha", "content_hash", "confidence", "importance", "is_active",
         "access_count", "last_accessed_at", "expires_at", "created_at", "updated_at",
     },
+    "agent_delegations": {
+        "id", "task_id", "step_id", "user_id", "repository_id", "source_execution_id",
+        "specialist_key", "specialist_name", "mission", "status", "attempt_number",
+        "assignment_context", "result_summary", "error_message", "created_at",
+        "started_at", "finished_at",
+    },
 }
 
 EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
@@ -310,6 +316,26 @@ EXPECTED_CONSTRAINTS: dict[str, dict[str, set[str]]] = {
             "ix_agent_memories_user_repo_active",
             "ix_agent_memories_repo_commit",
             "ix_agent_memories_repo_updated",
+        },
+    },
+    "agent_delegations": {
+        "primary": {"pk_agent_delegations"},
+        "unique": set(),
+        "check": {
+            "ck_agent_delegations_specialist_key_allowed",
+            "ck_agent_delegations_status_allowed",
+            "ck_agent_delegations_attempt_number_valid",
+            "ck_agent_delegations_specialist_name_length_valid",
+        },
+        "foreign": {
+            "fk_agent_delegations_task_owner",
+            "fk_agent_delegations_step_owner",
+            "fk_agent_delegations_source_execution",
+        },
+        "indexes": {
+            "ix_agent_delegations_task_created",
+            "ix_agent_delegations_user_task",
+            "ix_agent_delegations_step_attempt",
         },
     },
 }
