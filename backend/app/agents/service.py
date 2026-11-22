@@ -9,8 +9,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.planner import AgentPlanningError, create_plan
-from app.agents.schemas import AgentPlanProposal, AgentTaskStatus
+from app.agents.orchestrator import AgentOrchestrator
+from app.agents.schemas import AgentTaskStatus
+from app.agents.state import AgentExecutionState
 from app.models.agent_task import AgentTask
 from app.models.agent_plan import AgentPlan
 from app.models.agent_step import AgentStep
@@ -96,7 +97,8 @@ async def create_agent_task(
     db.add(task)
     db.flush()
     try:
-        proposal, settings = await create_plan(goal.strip(), max_steps=max_steps)
+        planning = await AgentOrchestrator().plan_goal(goal.strip(), max_steps=max_steps)
+        proposal = planning.proposal
         plan = AgentPlan(
             task_id=task.id,
             user_id=user_id,
@@ -105,8 +107,8 @@ async def create_agent_task(
             summary=proposal.summary,
             completion_criteria=proposal.completion_criteria,
             assumptions=proposal.assumptions,
-            planner_provider=settings.llm_provider,
-            planner_model=settings.llm_model,
+            planner_provider=planning.provider,
+            planner_model=planning.model,
         )
         db.add(plan)
         db.flush()
@@ -168,13 +170,18 @@ def list_agent_tasks(
 
 def cancel_agent_task(db: Session, *, task_id: uuid.UUID, user_id: uuid.UUID) -> AgentTask:
     task = get_agent_task(db, task_id=task_id, user_id=user_id)
-    if task.status not in {
-        AgentTaskStatus.QUEUED.value,
-        AgentTaskStatus.PLANNING.value,
-        AgentTaskStatus.PLANNED.value,
-    }:
-        raise ValueError("Only queued or planned tasks can be cancelled in Phase 1.")
-    task.status = AgentTaskStatus.CANCELLED.value
+    state = AgentExecutionState(
+        task_id=task.id,
+        user_id=task.user_id,
+        repository_id=task.repository_id,
+        indexed_commit_sha=task.indexed_commit_sha,
+        status=AgentTaskStatus(task.status),
+    )
+    try:
+        state.transition_to(AgentTaskStatus.CANCELLED)
+    except ValueError as exc:
+        raise ValueError("Only queued or planned tasks can be cancelled in Phase 1.") from exc
+    task.status = state.status.value
     task.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(task)
