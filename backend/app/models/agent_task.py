@@ -78,4 +78,5 @@ class AgentTask(Base):
         cascade="all, delete-orphan",
         order_by="AgentStep.position",
         foreign_keys="[AgentStep.task_id, AgentStep.user_id, AgentStep.repository_id]",
+        overlaps="plan,steps",
     )
