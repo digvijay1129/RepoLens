@@ -55,16 +55,16 @@ async def select_tool_call(
         )
     role_prompt = (
         COORDINATOR_PROMPT
-        + "\\n\\nSPECIALIST ASSIGNMENT:\\n"
+        + "\n\nSPECIALIST ASSIGNMENT:\n"
         + (
-            f"Role: {specialist.display_name}\\nMission: {specialist.mission}\\n{specialist.prompt}"
+            f"Role: {specialist.display_name}\nMission: {specialist.mission}\n{specialist.prompt}"
             if specialist is not None
             else "Role: General repository research specialist."
         )
     )
     return await complete_chat_with_tools(
         [
-            {"role": "system", "content": TOOL_ROUTER_SYSTEM_PROMPT + "\\n\\n" + role_prompt},
+            {"role": "system", "content": TOOL_ROUTER_SYSTEM_PROMPT + "\n\n" + role_prompt},
             {"role": "user", "content": prompt},
         ],
         registry.openai_tool_schemas(),
