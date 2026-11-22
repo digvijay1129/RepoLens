@@ -35,6 +35,7 @@ class AgentStep(Base):
             name="fk_agent_steps_plan_owner",
             ondelete="CASCADE",
         ),
+        UniqueConstraint("id", "task_id", "user_id", name="uq_agent_steps_id_task_user"),
         UniqueConstraint("task_id", "position", name="uq_agent_steps_task_position"),
         UniqueConstraint("task_id", "step_key", name="uq_agent_steps_task_step_key"),
         CheckConstraint("position >= 1", name="position_positive"),
