@@ -198,10 +198,10 @@ def list_repository_memories(
         AgentMemory.user_id == user_id,
     )
     if not include_inactive:
-        statement = statement.where(AgentMemory.is_active.is_(True))
-    statement = statement.where(
-        AgentMemory.expires_at.is_(None) | (AgentMemory.expires_at > now)
-    )
+        statement = statement.where(
+            AgentMemory.is_active.is_(True),
+            AgentMemory.expires_at.is_(None) | (AgentMemory.expires_at > now),
+        )
     if memory_type:
         statement = statement.where(AgentMemory.memory_type == memory_type)
     memories = db.scalars(
