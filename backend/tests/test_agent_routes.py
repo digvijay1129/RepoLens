@@ -792,6 +792,29 @@ def test_repository_memory_crud_search_deduplication_and_owner_isolation(
     assert updated.json()["importance"] == 4
     assert updated.json()["expires_at"] is None
 
+    archived = agent_client.patch(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=owner["headers"],
+        json={"is_active": False},
+    )
+    assert archived.status_code == 200
+    assert archived.json()["is_active"] is False
+    assert agent_client.get(base, headers=owner["headers"]).json() == []
+    archived_list = agent_client.get(
+        base,
+        headers=owner["headers"],
+        params={"include_inactive": True},
+    )
+    assert len(archived_list.json()) == 1
+
+    restored = agent_client.patch(
+        f"/api/v1/agents/memories/{memory_id}",
+        headers=owner["headers"],
+        json={"is_active": True},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["is_active"] is True
+
     other = create_account(agent_client, "agent-memory-other@example.com")
     other_repo_access = agent_client.get(
         base,
