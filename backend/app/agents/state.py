@@ -24,6 +24,7 @@ _ALLOWED_TRANSITIONS: dict[AgentTaskStatus, set[AgentTaskStatus]] = {
         AgentTaskStatus.AWAITING_APPROVAL,
         AgentTaskStatus.COMPLETED,
         AgentTaskStatus.FAILED,
+        AgentTaskStatus.PAUSED,
         AgentTaskStatus.CANCELLED,
     },
     AgentTaskStatus.AWAITING_APPROVAL: {
