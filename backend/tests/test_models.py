@@ -33,7 +33,7 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
     assert set(inspector.get_table_names()) == {
         "users", "repositories", "indexing_jobs", "repository_chunks",
         "repository_chunk_embeddings", "chat_conversations", "chat_messages",
-        "agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories",
+        "agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories", "agent_delegations",
     }
     assert "uq_repositories_user_full_name" in {
         constraint["name"] for constraint in inspector.get_unique_constraints("repositories")
@@ -59,6 +59,11 @@ def test_initial_schema_has_expected_tables_and_indexes() -> None:
         "ix_agent_memories_user_repo_active",
         "ix_agent_memories_repo_commit",
         "ix_agent_memories_repo_updated",
+    }
+    assert {index["name"] for index in inspector.get_indexes("agent_delegations")} == {
+        "ix_agent_delegations_task_created",
+        "ix_agent_delegations_user_task",
+        "ix_agent_delegations_step_attempt",
     }
     assert {index["name"] for index in inspector.get_indexes("agent_tasks")} == {
         "ix_agent_tasks_user_created",
