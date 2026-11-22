@@ -7,8 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.execution import (
+    AgentExecutionConflictError,
+    AgentStepNotFoundError,
+    execute_agent_step,
+    list_agent_tools,
+    list_tool_executions,
+)
 from app.agents.planner import AgentPlanningError
-from app.agents.schemas import AgentGoalRequest, AgentTaskStatus
+from app.agents.schemas import AgentGoalRequest, AgentStepExecutionRequest, AgentTaskStatus
+from app.agents.tools import AgentToolError
 from app.agents.service import (
     AgentRepositoryNotReadyError,
     AgentTaskNotFoundError,
@@ -19,7 +27,11 @@ from app.agents.service import (
     serialize_task,
 )
 from app.api.dependencies import get_current_user
-from app.api.schemas.agents import AgentTaskDetail, AgentTaskSummary
+from app.api.schemas.agents import (
+    AgentTaskDetail,
+    AgentTaskSummary,
+    AgentToolExecutionResponse,
+)
 from app.db.session import get_db_session
 from app.models.repository import Repository
 from app.models.user import User
@@ -134,3 +146,66 @@ def cancel_task(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+
+@router.get(
+    "/tasks/{task_id}/tools",
+    summary="List the read-only tools available to a planned agent task",
+)
+def get_task_tools(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> list[dict]:
+    try:
+        return list_agent_tools(db, task_id=task_id, user_id=current_user.id)
+    except AgentStepNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/tasks/{task_id}/tool-executions",
+    response_model=list[AgentToolExecutionResponse],
+    summary="List the audit history of read-only tool executions",
+)
+def get_task_tool_executions(
+    task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> list[dict]:
+    try:
+        return list_tool_executions(db, task_id=task_id, user_id=current_user.id)
+    except AgentStepNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/tasks/{task_id}/steps/{step_key}/execute",
+    response_model=AgentToolExecutionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Select and execute one read-only tool for a planned step",
+)
+async def execute_task_step(
+    task_id: uuid.UUID,
+    step_key: str,
+    body: AgentStepExecutionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    try:
+        return await execute_agent_step(
+            db,
+            task_id=task_id,
+            step_key=step_key,
+            user_id=current_user.id,
+            instruction=body.instruction,
+        )
+    except AgentStepNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentExecutionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LLMConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (LLMProviderError, AgentToolError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
