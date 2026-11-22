@@ -55,7 +55,12 @@ class AgentApprovalRequest(Base):
             "approval_mode IN ('approve_each')",
             name="approval_mode_allowed",
         ),
+        CheckConstraint(
+            "specialist_key IN ('research','code_analysis','architecture','debugging','documentation')",
+            name="specialist_key_allowed",
+        ),
         CheckConstraint("length(tool_name) BETWEEN 1 AND 80", name="tool_name_length_valid"),
+        CheckConstraint("length(action_hash) = 64", name="action_hash_length_valid"),
         CheckConstraint("length(policy_reason) BETWEEN 8 AND 500", name="policy_reason_length_valid"),
         Index("ix_agent_approval_requests_task_status", "task_id", "status", "created_at"),
         Index("ix_agent_approval_requests_user_status", "user_id", "status", "expires_at"),
@@ -77,6 +82,7 @@ class AgentApprovalRequest(Base):
     tool_name: Mapped[str] = mapped_column(String(80), nullable=False)
     tool_arguments: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     provider_call_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    action_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     specialist_key: Mapped[str] = mapped_column(String(32), nullable=False)
     policy_reason: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[str] = mapped_column(
