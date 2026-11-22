@@ -201,6 +201,7 @@ class AgentMemoryUpdateRequest(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=12)
     importance: int | None = Field(default=None, ge=1, le=5)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    is_active: bool | None = None
     expires_at: datetime | None = None
 
     @field_validator("tags")
