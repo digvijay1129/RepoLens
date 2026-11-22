@@ -9,13 +9,13 @@ from app.db.base import Base
 import app.models  # noqa: F401 -- register models for metadata assertions
 
 
-def test_alembic_has_a_linear_twelve_revision_history() -> None:
+def test_alembic_has_a_linear_thirteen_revision_history() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
     revisions = {revision.revision: revision for revision in script.walk_revisions()}
 
-    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007", "20261122_0008", "20261122_0009", "20261122_0010", "20261122_0011", "20261122_0012"}
+    assert set(revisions) == {"20261025_0001", "20261025_0002", "20261025_0003", "20261025_0004", "20261025_0005", "20261025_0006", "20261025_0007", "20261122_0008", "20261122_0009", "20261122_0010", "20261122_0011", "20261122_0012", "20261122_0013"}
     assert revisions["20261025_0001"].down_revision is None
     assert revisions["20261025_0002"].down_revision == "20261025_0001"
     assert revisions["20261025_0003"].down_revision == "20261025_0002"
@@ -28,11 +28,12 @@ def test_alembic_has_a_linear_twelve_revision_history() -> None:
     assert revisions["20261122_0010"].down_revision == "20261122_0009"
     assert revisions["20261122_0011"].down_revision == "20261122_0010"
     assert revisions["20261122_0012"].down_revision == "20261122_0011"
-    assert script.get_current_head() == "20261122_0012"
+    assert revisions["20261122_0013"].down_revision == "20261122_0012"
+    assert script.get_current_head() == "20261122_0013"
 
 
 def test_model_metadata_has_expected_tables() -> None:
-    assert set(Base.metadata.tables) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings", "chat_conversations", "chat_messages", "agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories", "agent_delegations"}
+    assert set(Base.metadata.tables) == {"users", "repositories", "indexing_jobs", "repository_chunks", "repository_chunk_embeddings", "chat_conversations", "chat_messages", "agent_tasks", "agent_plans", "agent_steps", "agent_tool_executions", "agent_memories", "agent_delegations", "agent_approval_requests"}
 
 
 def test_models_include_phase_3b_persistence_fields() -> None:
@@ -61,7 +62,7 @@ def test_models_include_phase_3b_persistence_fields() -> None:
 
 def test_agent_models_include_owner_scoped_persistence_fields() -> None:
     assert {
-        "indexed_commit_sha", "goal", "status", "max_steps", "max_tool_calls",
+        "indexed_commit_sha", "goal", "status", "approval_mode", "max_steps", "max_tool_calls",
         "max_retries_per_step", "total_tool_calls", "total_retries", "final_result",
         "execution_started_at", "execution_finished_at", "latest_error",
     } <= set(
@@ -101,4 +102,16 @@ def test_agent_delegation_model_has_specialist_and_owner_scoped_fields() -> None
         "task_id", "step_id", "user_id", "repository_id", "source_execution_id",
         "specialist_key", "specialist_name", "mission", "status", "attempt_number",
         "assignment_context", "result_summary", "error_message", "started_at", "finished_at",
+    } <= columns
+
+
+
+def test_agent_approval_model_has_auditable_immutable_action_fields() -> None:
+    columns = set(Base.metadata.tables["agent_approval_requests"].columns.keys())
+    assert {
+        "task_id", "step_id", "user_id", "repository_id", "delegation_id",
+        "executed_execution_id", "approval_mode", "tool_name", "tool_arguments",
+        "provider_call_id", "action_hash", "specialist_key", "policy_reason",
+        "status", "requested_at", "expires_at", "decided_at",
+        "decided_by_user_id", "decision_comment",
     } <= columns
