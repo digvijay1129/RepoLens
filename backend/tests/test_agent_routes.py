@@ -839,6 +839,36 @@ def test_repository_memory_crud_search_deduplication_and_owner_isolation(
     assert agent_client.get(base, headers=owner["headers"]).json() == []
 
 
+def test_expired_memories_are_hidden_from_retrieval_but_visible_for_cleanup(
+    agent_client: TestClient,
+):
+    account = create_account(agent_client, "agent-memory-expiry@example.com")
+    repository = create_saved_repository(agent_client, account["headers"])
+    base = f"/api/v1/agents/repositories/{repository['id']}/memories"
+    expired = agent_client.post(
+        base,
+        headers=account["headers"],
+        json={
+            "memory_type": "note",
+            "title": "Old API decision",
+            "content": "The old endpoint used a temporary API convention that should not be reused.",
+            "tags": ["legacy", "api"],
+            "expires_at": "2000-01-01T00:00:00Z",
+        },
+    )
+    assert expired.status_code == 201, expired.text
+
+    assert agent_client.get(base, headers=account["headers"]).json() == []
+    cleanup_view = agent_client.get(
+        base,
+        headers=account["headers"],
+        params={"include_inactive": True},
+    )
+    assert cleanup_view.status_code == 200
+    assert len(cleanup_view.json()) == 1
+    assert cleanup_view.json()[0]["id"] == expired.json()["id"]
+
+
 def test_memory_api_rejects_invalid_types_and_unbounded_payloads(agent_client: TestClient):
     account = create_account(agent_client, "agent-memory-validation@example.com")
     repository = create_saved_repository(agent_client, account["headers"])
