@@ -194,6 +194,7 @@ def cancel_agent_task(db: Session, *, task_id: uuid.UUID, user_id: uuid.UUID) ->
         raise ValueError("Only non-terminal agent tasks can be cancelled.") from exc
     task.status = state.status.value
     task.updated_at = datetime.now(timezone.utc)
+    task.execution_finished_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(task)
     return task
