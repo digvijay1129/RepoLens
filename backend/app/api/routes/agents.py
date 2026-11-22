@@ -142,7 +142,7 @@ def get_task(
 @router.post(
     "/tasks/{task_id}/cancel",
     response_model=AgentTaskDetail,
-    summary="Cancel a queued or planned agent task",
+    summary="Cancel a queued, planned, paused, or running agent task",
 )
 def cancel_task(
     task_id: uuid.UUID,
