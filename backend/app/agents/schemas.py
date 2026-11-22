@@ -120,12 +120,14 @@ class AgentTaskSummary(BaseModel):
     repository_id: UUID
     goal: str
     status: AgentTaskStatus
+    approval_mode: Literal["auto", "approve_each"] = "auto"
     max_steps: int
     created_at: str
     updated_at: str
 
 
 class AgentTaskDetail(AgentTaskSummary):
+    approval_mode: Literal["auto", "approve_each"] = "auto"
     plan: dict | None = None
     steps: list[dict]
     latest_error: str | None = None
