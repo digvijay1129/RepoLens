@@ -894,6 +894,16 @@ def test_successful_tool_execution_automatically_captures_bounded_memory(
     assert executed.status_code == 200, executed.text
     assert executed.json()["status"] == "succeeded"
 
+    from app.agents.memory import capture_tool_execution_memory
+    with Session(agent_client.app.state.agent_test_engine) as db:
+        captured = capture_tool_execution_memory(
+            db,
+            task_id=UUID(task_id),
+            user_id=UUID(account["user"]["id"]),
+            execution_id=UUID(executed.json()["id"]),
+        )
+    assert captured is not None
+
     memory_response = agent_client.get(
         f"/api/v1/agents/repositories/{repository['id']}/memories",
         headers=account["headers"],
