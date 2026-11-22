@@ -172,6 +172,7 @@ describe("Agent dashboard", () => {
 
   it("saves user-curated repository memory", async () => {
     const user = userEvent.setup();
+    getAgentTasks.mockResolvedValue([task]);
     renderDashboard();
     await screen.findByRole("heading", { name: "Agent dashboard" });
     await user.click(screen.getByRole("button", { name: /memory/i }));
