@@ -158,10 +158,13 @@ async def test_planner_rejects_non_json_provider_output():
         )
 
 
-def test_agent_api_routes_are_registered():
-    from app.api.router import api_router
+def test_agent_api_routes_are_registered_in_openapi():
+    from app.main import app
 
-    paths = {route.path for route in api_router.routes}
-    assert "/agents/tasks" in paths
-    assert "/agents/tasks/{task_id}" in paths
-    assert "/agents/tasks/{task_id}/cancel" in paths
+    paths = app.openapi()["paths"]
+    assert "/api/v1/agents/tasks" in paths
+    assert {"get", "post"} <= set(paths["/api/v1/agents/tasks"])
+    assert "/api/v1/agents/tasks/{task_id}" in paths
+    assert "get" in paths["/api/v1/agents/tasks/{task_id}"]
+    assert "/api/v1/agents/tasks/{task_id}/cancel" in paths
+    assert "post" in paths["/api/v1/agents/tasks/{task_id}/cancel"]
