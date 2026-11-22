@@ -1031,3 +1031,132 @@ def test_autonomous_step_selection_receives_relevant_persisted_memory(
         and "backend/app/api/routes/auth.py" in str(item.get("result"))
         for item in observed_contexts[-1]
     )
+
+
+
+def test_task_team_persists_specialist_delegation_and_enforces_owner_scope(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    owner = create_account(agent_client, "agent-team-owner@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+        },
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+    selected_roles = []
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        selected_roles.append(specialist.key)
+        return LLMFunctionCall(
+            call_id="multi-agent-research-call",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    executed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/steps/find_auth/execute",
+        headers=owner["headers"],
+        json={},
+    )
+    assert executed.status_code == 200, executed.text
+    assert executed.json()["status"] == "succeeded"
+    assert executed.json()["tool_input"]["specialist_key"] == "research"
+    assert selected_roles == ["research"]
+
+    team = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/team",
+        headers=owner["headers"],
+    )
+    assert team.status_code == 200, team.text
+    team_data = team.json()
+    assert team_data["coordinator"]["key"] == "coordinator"
+    assert len(team_data["specialists"]) == 5
+    assert team_data["delegation_count"] == 1
+    first_step = next(item for item in team_data["step_assignments"] if item["step_key"] == "find_auth")
+    assert first_step["specialist_key"] == "research"
+    assert first_step["step_status"] == "succeeded"
+    assert first_step["latest_delegation"]["status"] == "succeeded"
+    assert first_step["latest_delegation"]["source_execution_id"] == executed.json()["id"]
+
+    delegations = agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/delegations",
+        headers=owner["headers"],
+    )
+    assert delegations.status_code == 200
+    assert len(delegations.json()) == 1
+    assert delegations.json()[0]["specialist_name"] == "Repository Research Agent"
+
+    other = create_account(agent_client, "agent-team-other@example.com")
+    assert agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/team",
+        headers=other["headers"],
+    ).status_code == 404
+    assert agent_client.get(
+        f"/api/v1/agents/tasks/{task_id}/delegations",
+        headers=other["headers"],
+    ).status_code == 404
+
+
+def test_autonomous_final_report_contains_coordinator_team_synthesis(
+    agent_client: TestClient,
+    mocked_planner,
+    monkeypatch,
+):
+    from app.agents import execution as execution_service
+
+    owner = create_account(agent_client, "agent-team-report@example.com")
+    repository = create_saved_repository(agent_client, owner["headers"])
+    mark_repository_indexed(agent_client, repository["id"])
+    created = agent_client.post(
+        "/api/v1/agents/tasks",
+        headers=owner["headers"],
+        json={
+            "repository_id": repository["id"],
+            "goal": "Review authentication entry points and explain token validation.",
+        },
+    )
+    task_id = created.json()["id"]
+
+    async def choose_tool(task, step, registry, *, instruction=None, observations=None, specialist=None):
+        return LLMFunctionCall(
+            call_id=f"team-report-{step.step_key}",
+            name="repository_overview",
+            arguments={},
+        )
+
+    monkeypatch.setattr(execution_service, "select_tool_call", choose_tool)
+    completed = agent_client.post(
+        f"/api/v1/agents/tasks/{task_id}/run",
+        headers=owner["headers"],
+        json={
+            "max_tool_calls": 4,
+            "max_retries_per_step": 0,
+            "max_runtime_seconds": 15,
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    payload = completed.json()
+    assert payload["status"] == "completed"
+    team_report = payload["final_result"]["team"]
+    assert team_report["coordinator"] == "Main Coordinator Agent"
+    assert team_report["delegation_count"] == 2
+    assert {item["step_key"] for item in team_report["findings"]} == {
+        "find_auth",
+        "review_tokens",
+    }
+    assert {item["specialist"] for item in team_report["findings"]} == {
+        "Repository Research Agent",
+        "Code Analysis Agent",
+    }
