@@ -78,6 +78,7 @@ class SavedRepositoryResponse(BaseModel):
     default_branch: str | None
     selected_branch: str
     indexing_status: str
+    indexed_commit_sha: str | None = None
     embedding_status: str
     embedding_provider: str | None
     embedding_model: str | None

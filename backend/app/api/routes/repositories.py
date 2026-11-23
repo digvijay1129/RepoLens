@@ -82,6 +82,7 @@ def _saved_repository_payload(repository: Repository) -> dict:
         "default_branch": repository.default_branch,
         "selected_branch": repository.selected_branch,
         "indexing_status": repository.indexing_status,
+        "indexed_commit_sha": repository.indexed_commit_sha,
         "embedding_status": repository.embedding_status,
         "embedding_provider": repository.embedding_provider,
         "embedding_model": repository.embedding_model,
